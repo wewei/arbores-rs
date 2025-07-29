@@ -209,7 +209,9 @@ impl Lexer {
         let mut symbol = String::new();
 
         while let Some(ch) = self.current_char {
-            if ch.is_alphanumeric() || "-+*/<>=!?_#".contains(ch) {
+            // 根据 Scheme R5RS 标准，标识符可以包含：
+            // 字母、数字和特殊字符: ! $ % & * + - . / : < = > ? @ ^ _ ~
+            if ch.is_alphanumeric() || "!$%&*+-./:<=>?@^_~#".contains(ch) {
                 symbol.push(ch);
                 self.advance();
             } else {
@@ -371,6 +373,49 @@ mod tests {
             Token::Integer(1),
             Token::Integer(2),
             Token::RightParen,
+            Token::EOF,
+        ]);
+    }
+
+    #[test]
+    fn test_lexer_colon_in_symbols() {
+        let mut lexer = Lexer::new("arb:create arb:search my:var test:func:");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens, vec![
+            Token::Symbol("arb:create".to_string()),
+            Token::Symbol("arb:search".to_string()),
+            Token::Symbol("my:var".to_string()),
+            Token::Symbol("test:func:".to_string()),
+            Token::EOF,
+        ]);
+    }
+
+    #[test]
+    fn test_lexer_extended_symbol_chars() {
+        // 测试 R5RS 标准允许的特殊字符
+        let mut lexer = Lexer::new("func! var$ mod% obj& mul* add+ sub- field. div/ ns:name lt< eq= gt> pred? email@ pow^ under_ tilde~");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens, vec![
+            Token::Symbol("func!".to_string()),
+            Token::Symbol("var$".to_string()),
+            Token::Symbol("mod%".to_string()),
+            Token::Symbol("obj&".to_string()),
+            Token::Symbol("mul*".to_string()),
+            Token::Symbol("add+".to_string()),
+            Token::Symbol("sub-".to_string()),
+            Token::Symbol("field.".to_string()),
+            Token::Symbol("div/".to_string()),
+            Token::Symbol("ns:name".to_string()),
+            Token::Symbol("lt<".to_string()),
+            Token::Symbol("eq=".to_string()),
+            Token::Symbol("gt>".to_string()),
+            Token::Symbol("pred?".to_string()),
+            Token::Symbol("email@".to_string()),
+            Token::Symbol("pow^".to_string()),
+            Token::Symbol("under_".to_string()),
+            Token::Symbol("tilde~".to_string()),
             Token::EOF,
         ]);
     }
