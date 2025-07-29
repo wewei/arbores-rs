@@ -66,6 +66,12 @@ impl Repl {
                     break;
                 },
                 Ok(_) => {
+                    // 在处理输入前再次检查中断标志
+                    if interrupted.load(Ordering::SeqCst) {
+                        println!("\nGoodbye!");
+                        break;
+                    }
+                    
                     let input = input.trim();
                     
                     // 检查退出命令
@@ -83,7 +89,7 @@ impl Repl {
                 },
                 Err(error) => {
                     // 检查是否为中断信号 (Ctrl+C)
-                    if error.kind() == io::ErrorKind::Interrupted {
+                    if error.kind() == io::ErrorKind::Interrupted || interrupted.load(Ordering::SeqCst) {
                         println!("\nGoodbye!");
                         break;
                     } else {
