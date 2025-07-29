@@ -4,6 +4,8 @@ use std::sync::Arc;
 use crate::eval::Evaluator;
 use crate::parser::Parser;
 
+pub mod enhanced;
+
 /// REPL (Read-Eval-Print Loop) 实现
 pub struct Repl {
     evaluator: Evaluator,
