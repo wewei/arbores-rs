@@ -1,172 +1,246 @@
-use std::io::{self, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::collections::HashMap;
 use crate::eval::Evaluator;
 use crate::parser::Parser;
+use crate::types::{SchemeError, Value};
+use rustyline::error::ReadlineError;
+use rustyline::{Editor, Result as RustylineResult};
 
-pub mod enhanced;
-
-/// REPL (Read-Eval-Print Loop) 实现
+/// REPL (Read-Eval-Print Loop) 实现 - 使用增强模式
 pub struct Repl {
     evaluator: Evaluator,
+    context: HashMap<String, Value>,
+    editor: Editor<()>,
 }
 
 impl Repl {
     /// 创建新的 REPL
-    pub fn new() -> Self {
-        Repl {
+    pub fn new() -> RustylineResult<Self> {
+        let editor = Editor::<()>::new()?;
+        Ok(Repl {
             evaluator: Evaluator::new(),
-        }
+            context: HashMap::new(),
+            editor,
+        })
     }
 
     /// 启动 REPL
-    pub fn run(&mut self) {
-        // 检查是否在交互式终端中运行
-        if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-            self.run_interactive();
-        } else {
-            self.run_batch();
-        }
-    }
-
-    /// 交互式模式
-    fn run_interactive(&mut self) {
-        // 设置 Ctrl+C 处理器（仅在交互模式下）
-        let interrupted = Arc::new(AtomicBool::new(false));
-        let interrupted_clone = interrupted.clone();
-        
-        let _guard = ctrlc::set_handler(move || {
-            interrupted_clone.store(true, Ordering::SeqCst);
-        });
-        
-        if _guard.is_err() {
-            // 如果无法设置处理器，使用默认行为
-            eprintln!("Warning: Could not set Ctrl+C handler. Use 'exit' to quit.");
-        }
-        
-        println!("Arbores Scheme Interpreter v0.1.0");
-        println!("Type 'exit' or press Ctrl+C to quit.");
+    pub fn run(&mut self) -> RustylineResult<()> {
+        println!("🌲 Arbores Scheme Interpreter v0.1.0 (Enhanced Mode)");
+        println!("Type :help for help, :exit to quit, or Ctrl+D to exit.");
+        println!("Features: History ✓ Line editing ✓ Multi-line ✓");
         println!();
 
-        loop {
-            // 检查是否收到 Ctrl+C 信号
-            if interrupted.load(Ordering::SeqCst) {
-                println!("\nGoodbye!");
-                break;
-            }
-            
-            // 显示提示符
-            print!("arbores> ");
-            io::stdout().flush().unwrap();
+        let mut multiline_buffer = String::new();
 
-            // 读取用户输入
-            let mut input = String::new();
-            match io::stdin().read_line(&mut input) {
-                Ok(0) => {
-                    // EOF reached (Ctrl+D on Unix, Ctrl+Z on Windows)
-                    println!("\nGoodbye!");
-                    break;
-                },
-                Ok(_) => {
-                    // 在处理输入前再次检查中断标志
-                    if interrupted.load(Ordering::SeqCst) {
-                        println!("\nGoodbye!");
-                        break;
+        loop {
+            let prompt = if multiline_buffer.is_empty() {
+                "arbores> "
+            } else {
+                "      .. "
+            };
+
+            match self.editor.readline(prompt) {
+                Ok(line) => {
+                    let line = line.trim();
+                    
+                    // 处理空行
+                    if line.is_empty() {
+                        if !multiline_buffer.is_empty() {
+                            continue;
+                        } else {
+                            continue;
+                        }
                     }
                     
-                    let input = input.trim();
-                    
-                    // 检查退出命令
-                    if input.is_empty() {
+                    // 处理特殊命令
+                    if line.starts_with(':') {
+                        if let Some(output) = self.handle_command(line) {
+                            println!("{}", output);
+                        }
                         continue;
                     }
                     
-                    if input == "exit" || input == "quit" {
-                        println!("Goodbye!");
-                        break;
+                    // 处理多行输入
+                    if !multiline_buffer.is_empty() {
+                        multiline_buffer.push(' ');
                     }
-
-                    // 求值并打印结果
-                    self.eval_and_print(input);
-                },
-                Err(error) => {
-                    // 检查是否为中断信号 (Ctrl+C)
-                    if error.kind() == io::ErrorKind::Interrupted || interrupted.load(Ordering::SeqCst) {
-                        println!("\nGoodbye!");
-                        break;
-                    } else {
-                        eprintln!("Error reading input: {error}");
-                        break;
+                    multiline_buffer.push_str(line);
+                    
+                    // 检查是否是完整的表达式
+                    if self.is_complete_expression(&multiline_buffer) {
+                        // 添加到历史记录
+                        let _ = self.editor.add_history_entry(&multiline_buffer);
+                        
+                        // 求值
+                        let result = self.evaluate(&multiline_buffer);
+                        println!("{}", result);
+                        
+                        // 清空缓冲区
+                        multiline_buffer.clear();
                     }
+                    // 否则继续等待更多输入
                 }
-            }
-        }
-    }
-
-    /// 批处理模式（用于管道输入）
-    fn run_batch(&mut self) {
-        let mut input = String::new();
-        
-        loop {
-            let mut line = String::new();
-            match io::stdin().read_line(&mut line) {
-                Ok(0) => {
-                    // EOF reached
+                Err(ReadlineError::Interrupted) => {
+                    println!("^C");
+                    multiline_buffer.clear();
+                }
+                Err(ReadlineError::Eof) => {
+                    println!("Goodbye!");
                     break;
-                },
-                Ok(_) => {
-                    input.push_str(&line);
-                },
-                Err(error) => {
-                    // 检查是否为中断信号 (Ctrl+C)
-                    if error.kind() == io::ErrorKind::Interrupted {
-                        // 在批处理模式下，Ctrl+C 应该直接退出而不显示消息
-                        std::process::exit(0);
-                    } else {
-                        eprintln!("Error reading input: {error}");
-                        std::process::exit(1);
-                    }
+                }
+                Err(err) => {
+                    eprintln!("Error: {:?}", err);
+                    break;
                 }
             }
         }
         
-        if !input.trim().is_empty() {
-            // 按行分割并处理每一行
-            for line in input.lines() {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                
-                // 检查退出命令
-                if line == "exit" || line == "quit" {
-                    break;
-                }
-                
-                // 求值并打印结果
-                match self.evaluator.eval_string(line) {
-                    Ok(result) => println!("{result}"),
-                    Err(error) => {
-                        eprintln!("Error: {error}");
-                        std::process::exit(1);
+        Ok(())
+    }
+
+    /// 检查括号是否匹配（简单的多行输入支持）
+    fn is_complete_expression(&self, input: &str) -> bool {
+        let mut paren_count = 0;
+        let mut in_string = false;
+        let mut escaped = false;
+        
+        for ch in input.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            
+            match ch {
+                '"' => in_string = !in_string,
+                '\\' if in_string => escaped = true,
+                '(' if !in_string => paren_count += 1,
+                ')' if !in_string => paren_count -= 1,
+                _ => {}
+            }
+        }
+        
+        paren_count == 0 && !in_string
+    }
+
+    /// 求值并返回结果
+    fn evaluate(&mut self, input: &str) -> String {
+        match self.evaluator.eval_string(input) {
+            Ok(value) => {
+                // 如果是定义操作，更新上下文（简单检测）
+                if input.trim().starts_with("(define ") {
+                    // 这里应该更准确地解析定义，但为简单起见使用字符串匹配
+                    if let Value::Symbol(name) = &value {
+                        self.context.insert(name.clone(), value.clone());
                     }
                 }
+                format!("{}", value)
+            }
+            Err(SchemeError::SyntaxError(msg, _)) => {
+                format!("Syntax Error: {}", msg)
+            }
+            Err(SchemeError::RuntimeError(msg, _)) => {
+                format!("Runtime Error: {}", msg)
+            }
+            Err(e) => {
+                format!("Error: {}", e)
             }
         }
     }
 
-    /// 求值并打印结果
-    fn eval_and_print(&mut self, input: &str) {
-        match self.evaluate_input(input) {
-            Ok(result) => println!("{result}"),
-            Err(error) => eprintln!("Error: {error}"),
+    /// 处理特殊命令
+    fn handle_command(&mut self, command: &str) -> Option<String> {
+        let command = command.trim_start_matches(':').trim();
+        
+        match command {
+            "help" => {
+                Some(
+                    r#"
+🌲 Arbores Scheme Interpreter Commands:
+  :help         Show this help message
+  :symbols      List available symbols
+  :keywords     List Scheme keywords
+  :clear        Clear the screen
+  :reset        Reset the interpreter state
+  :history      Show command history
+  :exit         Exit the interpreter
+
+Scheme Special Forms:
+  (quote expr)  Return expr without evaluation
+  (if test then else)  Conditional expression
+  (lambda (params) body)  Create function
+  (let ((var val) ...) body)  Local bindings
+  (define var val)  Define variable
+  (begin expr ...)  Sequential evaluation
+
+Built-in Functions:
+  Arithmetic: + - * / = < > <= >= abs max min
+  Lists: cons car cdr list null? pair?
+  Types: number? string? symbol?
+
+Navigation:
+  ↑/↓           Browse command history
+  Ctrl+A/E      Move to beginning/end of line
+  Ctrl+L        Clear screen
+  Ctrl+C        Interrupt
+  Ctrl+D        Exit
+"#
+                    .trim()
+                    .to_string(),
+                )
+            }
+            "symbols" => {
+                let symbols = self.get_available_symbols();
+                Some(format!("Available symbols: {}", symbols.join(", ")))
+            }
+            "keywords" => {
+                let keywords = self.get_scheme_keywords();
+                Some(format!("Scheme keywords: {}", keywords.join(", ")))
+            }
+            "clear" => {
+                print!("\x1B[2J\x1B[1;1H"); // Clear screen ANSI escape sequence
+                None
+            }
+            "reset" => {
+                self.evaluator = Evaluator::new();
+                self.context.clear();
+                Some("Interpreter state reset.".to_string())
+            }
+            "history" => {
+                // rustyline 内置了历史功能，这里只是提示
+                Some("Use ↑/↓ arrows to navigate command history.".to_string())
+            }
+            "exit" => {
+                println!("Goodbye!");
+                std::process::exit(0);
+            }
+            _ => Some(format!("Unknown command: :{}", command)),
         }
     }
 
-    /// 求值输入
-    fn evaluate_input(&mut self, input: &str) -> Result<crate::types::Value, crate::types::SchemeError> {
-        // 求值表达式
-        self.evaluator.eval_string(input)
+    /// 获取 Scheme 关键字列表（用于自动补全）
+    fn get_scheme_keywords(&self) -> Vec<&'static str> {
+        vec![
+            // Special forms
+            "quote", "if", "lambda", "let", "begin", "and", "or", "cond", "define", "set!",
+            // Built-in functions
+            "+", "-", "*", "/", "=", "<", ">", "<=", ">=", "abs", "max", "min",
+            "cons", "car", "cdr", "list", "null?", "pair?", "number?", "string?", "symbol?",
+            // Constants
+            "#t", "#f", "true", "false",
+        ]
+    }
+
+    /// 获取当前环境中可用的符号
+    fn get_available_symbols(&self) -> Vec<String> {
+        let mut symbols = Vec::new();
+        
+        // 添加内置关键字
+        symbols.extend(self.get_scheme_keywords().iter().map(|s| s.to_string()));
+        
+        // 添加用户定义的变量
+        symbols.extend(self.context.keys().cloned());
+        
+        symbols
     }
 
     /// 求值多个表达式
@@ -191,8 +265,21 @@ impl Repl {
 
 impl Default for Repl {
     fn default() -> Self {
-        Self::new()
+        Self::new().unwrap_or_else(|_| {
+            // 如果无法创建增强版 REPL，这里应该有一个回退方案
+            // 但为了简化，我们假设 rustyline 总是可用的
+            panic!("Failed to create enhanced REPL")
+        })
     }
+}
+
+/// 启动增强版 REPL 的便利函数
+pub fn run_repl() -> Result<(), Box<dyn std::error::Error>> {
+    let mut repl = Repl::new()
+        .map_err(|e| format!("Failed to initialize REPL: {}", e))?;
+    
+    repl.run()
+        .map_err(|e| format!("REPL error: {}", e).into())
 }
 
 #[cfg(test)]
@@ -202,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_repl_basic() {
-        let mut repl = Repl::new();
+        let mut repl = Repl::new().unwrap();
         
         assert_eq!(repl.eval("42").unwrap(), Value::Integer(42));
         assert_eq!(repl.eval("(+ 1 2)").unwrap(), Value::Integer(3));
@@ -211,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_repl_multiple() {
-        let mut repl = Repl::new();
+        let mut repl = Repl::new().unwrap();
         
         let results = repl.eval_multiple("1 2 (+ 3 4)").unwrap();
         assert_eq!(results.len(), 3);

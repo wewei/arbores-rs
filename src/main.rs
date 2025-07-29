@@ -1,4 +1,4 @@
-use arbores::Repl;
+use arbores::repl::Repl;
 use clap::{Arg, Command};
 
 fn main() {
@@ -6,14 +6,6 @@ fn main() {
         .version("0.1.0")
         .author("weiwei")
         .about("Arbores Scheme Interpreter")
-        .arg(
-            Arg::new("repl-mode")
-                .long("repl")
-                .value_name("MODE")
-                .help("REPL mode to use")
-                .value_parser(["simple", "enhanced"])
-                .default_value("enhanced")
-        )
         .arg(
             Arg::new("file")
                 .help("Scheme file to execute")
@@ -28,25 +20,16 @@ fn main() {
         return;
     }
 
-    // 否则启动 REPL
-    let repl_mode = matches.get_one::<String>("repl-mode").unwrap();
-    
-    match repl_mode.as_str() {
-        "enhanced" => {
-            // 尝试启动增强版 REPL
-            if let Err(e) = arbores::repl::enhanced::run_enhanced_repl() {
-                eprintln!("Enhanced REPL failed to start: {}", e);
-                eprintln!("Falling back to simple REPL...");
-                let mut repl = Repl::new();
-                repl.run();
+    // 启动 REPL
+    match Repl::new() {
+        Ok(mut repl) => {
+            if let Err(e) = repl.run() {
+                eprintln!("REPL error: {}", e);
+                std::process::exit(1);
             }
         }
-        "simple" => {
-            let mut repl = Repl::new();
-            repl.run();
-        }
-        _ => {
-            eprintln!("Unknown REPL mode: {}", repl_mode);
+        Err(e) => {
+            eprintln!("Failed to initialize REPL: {}", e);
             std::process::exit(1);
         }
     }
@@ -55,15 +38,22 @@ fn main() {
 fn execute_file(file_path: &str) {
     match std::fs::read_to_string(file_path) {
         Ok(content) => {
-            let mut repl = Repl::new();
-            match repl.eval_multiple(&content) {
-                Ok(results) => {
-                    for result in results {
-                        println!("{}", result);
+            match Repl::new() {
+                Ok(mut repl) => {
+                    match repl.eval_multiple(&content) {
+                        Ok(results) => {
+                            for result in results {
+                                println!("{}", result);
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("Error executing file: {}", e);
+                            std::process::exit(1);
+                        }
                     }
-                },
+                }
                 Err(e) => {
-                    eprintln!("Error executing file: {}", e);
+                    eprintln!("Failed to initialize REPL: {}", e);
                     std::process::exit(1);
                 }
             }
