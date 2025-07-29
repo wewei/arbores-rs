@@ -116,10 +116,10 @@ pub enum StorageError {
 impl std::fmt::Display for StorageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StorageError::NotFound(id) => write!(f, "S-Expression with ID {} not found", id),
-            StorageError::AlreadyExists(id) => write!(f, "S-Expression with ID {} already exists", id),
-            StorageError::InvalidData(msg) => write!(f, "Invalid data: {}", msg),
-            StorageError::IoError(msg) => write!(f, "IO error: {}", msg),
+            StorageError::NotFound(id) => write!(f, "S-Expression with ID {id} not found"),
+            StorageError::AlreadyExists(id) => write!(f, "S-Expression with ID {id} already exists"),
+            StorageError::InvalidData(msg) => write!(f, "Invalid data: {msg}"),
+            StorageError::IoError(msg) => write!(f, "IO error: {msg}"),
         }
     }
 }
@@ -163,7 +163,7 @@ impl MemoryStorage {
         for symbol in &expr.symbol_names {
             self.symbol_index
                 .entry(symbol.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(expr.id);
         }
     }
@@ -185,7 +185,7 @@ impl MemoryStorage {
         for &dep_id in &expr.dependencies {
             self.dependents_index
                 .entry(dep_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(expr.id);
         }
     }

@@ -61,7 +61,7 @@ impl Repl {
                     self.eval_and_print(input);
                 },
                 Err(error) => {
-                    eprintln!("Error reading input: {}", error);
+                    eprintln!("Error reading input: {error}");
                     break;
                 }
             }
@@ -83,7 +83,7 @@ impl Repl {
                     input.push_str(&line);
                 },
                 Err(error) => {
-                    eprintln!("Error reading input: {}", error);
+                    eprintln!("Error reading input: {error}");
                     std::process::exit(1);
                 }
             }
@@ -104,9 +104,9 @@ impl Repl {
                 
                 // 求值并打印结果
                 match self.evaluator.eval_string(line) {
-                    Ok(result) => println!("{}", result),
+                    Ok(result) => println!("{result}"),
                     Err(error) => {
-                        eprintln!("Error: {}", error);
+                        eprintln!("Error: {error}");
                         std::process::exit(1);
                     }
                 }
@@ -117,8 +117,8 @@ impl Repl {
     /// 求值并打印结果
     fn eval_and_print(&mut self, input: &str) {
         match self.evaluate_input(input) {
-            Ok(result) => println!("{}", result),
-            Err(error) => eprintln!("Error: {}", error),
+            Ok(result) => println!("{result}"),
+            Err(error) => eprintln!("Error: {error}"),
         }
     }
 
@@ -134,7 +134,8 @@ impl Repl {
         let mut results = Vec::new();
         
         for expr in expressions {
-            let result = self.evaluator.eval(&expr, self.evaluator.global_env.clone())?;
+            let global_env = self.evaluator.get_global_env();
+            let result = self.evaluator.eval(&expr, &global_env)?;
             results.push(result);
         }
         

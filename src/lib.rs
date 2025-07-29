@@ -1,4 +1,4 @@
-/// Arbores - A Scheme-compatible Lisp interpreter written in Rust
+//! Arbores - A Scheme-compatible Lisp interpreter written in Rust
 
 pub mod types;
 pub mod lexer;

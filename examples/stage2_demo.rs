@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// 格式化 Value 为可读字符串
 fn format_value(value: &arbores::Value, indent: usize) -> String {
-    let prefix = "  ".repeat(indent);
+    let _prefix = "  ".repeat(indent);
     
     match value {
         arbores::Value::Nil => "()".to_string(),

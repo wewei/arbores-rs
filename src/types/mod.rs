@@ -28,7 +28,7 @@ pub enum Value {
     Lambda {
         params: Vec<String>,
         body: Rc<Value>,
-        env: Rc<crate::env::Environment>, // 闭包环境
+        env_id: crate::env::EnvironmentId, // 闭包环境 ID
     },
 }
 
@@ -88,17 +88,17 @@ impl fmt::Display for Value {
             Value::Nil => write!(f, "()"),
             Value::Bool(true) => write!(f, "#t"),
             Value::Bool(false) => write!(f, "#f"),
-            Value::Integer(n) => write!(f, "{}", n),
-            Value::Float(n) => write!(f, "{}", n),
-            Value::String(s) => write!(f, "\"{}\"", s),
-            Value::Symbol(s) => write!(f, "{}", s),
+            Value::Integer(n) => write!(f, "{n}"),
+            Value::Float(n) => write!(f, "{n}"),
+            Value::String(s) => write!(f, "\"{s}\""),
+            Value::Symbol(s) => write!(f, "{s}"),
             Value::Cons(_, _) => {
                 // 打印列表形式
                 if let Some(vec) = self.to_vec() {
                     write!(f, "(")?;
                     for (i, val) in vec.iter().enumerate() {
                         if i > 0 { write!(f, " ")?; }
-                        write!(f, "{}", val)?;
+                        write!(f, "{val}")?;
                     }
                     write!(f, ")")
                 } else {
@@ -106,7 +106,7 @@ impl fmt::Display for Value {
                     write!(f, "({} . {})", self.car().unwrap(), self.cdr().unwrap())
                 }
             },
-            Value::BuiltinFunction { name, .. } => write!(f, "#<builtin:{}>", name),
+            Value::BuiltinFunction { name, .. } => write!(f, "#<builtin:{name}>"),
             Value::Lambda { .. } => write!(f, "#<procedure>"),
         }
     }
@@ -150,11 +150,11 @@ pub enum SchemeError {
 impl fmt::Display for SchemeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SchemeError::SyntaxError(msg) => write!(f, "Syntax Error: {}", msg),
-            SchemeError::RuntimeError(msg) => write!(f, "Runtime Error: {}", msg),
-            SchemeError::TypeError(msg) => write!(f, "Type Error: {}", msg),
-            SchemeError::UndefinedVariable(var) => write!(f, "Undefined Variable: {}", var),
-            SchemeError::ArityError(msg) => write!(f, "Arity Error: {}", msg),
+            SchemeError::SyntaxError(msg) => write!(f, "Syntax Error: {msg}"),
+            SchemeError::RuntimeError(msg) => write!(f, "Runtime Error: {msg}"),
+            SchemeError::TypeError(msg) => write!(f, "Type Error: {msg}"),
+            SchemeError::UndefinedVariable(var) => write!(f, "Undefined Variable: {var}"),
+            SchemeError::ArityError(msg) => write!(f, "Arity Error: {msg}"),
             SchemeError::DivisionByZero => write!(f, "Division by zero"),
         }
     }

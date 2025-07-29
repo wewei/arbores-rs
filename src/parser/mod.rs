@@ -13,7 +13,7 @@ impl Parser {
     pub fn new(input: &str) -> Result<Self> {
         let mut lexer = Lexer::new(input);
         let tokens = lexer.tokenize()
-            .map_err(|e| SchemeError::SyntaxError(e))?;
+            .map_err(SchemeError::SyntaxError)?;
         
         Ok(Parser {
             tokens,

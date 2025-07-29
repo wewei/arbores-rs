@@ -32,7 +32,7 @@ impl Arbores {
     ) -> Result<SExpressionId> {
         // 解析代码
         let code = crate::parse(code_str)
-            .map_err(|e| SchemeError::RuntimeError(format!("Failed to parse code: {}", e)))?;
+            .map_err(|e| SchemeError::RuntimeError(format!("Failed to parse code: {e}")))?;
 
         // 创建 StoredSExpression
         let stored_expr = StoredSExpression::new(
@@ -46,14 +46,14 @@ impl Arbores {
 
         // 存储到知识库
         self.storage.borrow_mut().store(stored_expr)
-            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {}", e)))
+            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {e}")))
     }
 
     /// arb:get-metadata - 根据 ID 查询 S-Expression 的元数据
     pub fn get_metadata(&self, id: SExpressionId) -> Result<Value> {
         let expr = self.storage.borrow().get(id)
-            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {}", e)))?
-            .ok_or_else(|| SchemeError::RuntimeError(format!("S-Expression with ID {} not found", id)))?;
+            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {e}")))?
+            .ok_or_else(|| SchemeError::RuntimeError(format!("S-Expression with ID {id} not found")))?;
 
         // 构造元数据的 association list 格式
         let mut metadata = Vec::new();
@@ -116,8 +116,8 @@ impl Arbores {
     /// arb:get-dependencies - 根据 ID 查询 S-Expression 依赖的 S-Expression ID 列表
     pub fn get_dependencies(&self, id: SExpressionId) -> Result<Value> {
         let expr = self.storage.borrow().get(id)
-            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {}", e)))?
-            .ok_or_else(|| SchemeError::RuntimeError(format!("S-Expression with ID {} not found", id)))?;
+            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {e}")))?
+            .ok_or_else(|| SchemeError::RuntimeError(format!("S-Expression with ID {id} not found")))?;
 
         let deps: Vec<Value> = expr.dependencies.iter()
             .map(|&id| Value::Integer(id as i64))
@@ -133,13 +133,13 @@ impl Arbores {
         let found_ids = match mode {
             "exact" => {
                 self.storage.borrow().find_by_symbol(pattern)
-                    .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {}", e)))?
+                    .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {e}")))?
             }
             "prefix" => {
                 self.find_by_prefix(pattern)?
             }
             _ => {
-                return Err(SchemeError::RuntimeError(format!("Unsupported match mode: {}", mode)));
+                return Err(SchemeError::RuntimeError(format!("Unsupported match mode: {mode}")));
             }
         };
 
@@ -185,7 +185,7 @@ impl Arbores {
     /// arb:semantic-search - 基础语义搜索（暂时简化为描述文本匹配）
     pub fn semantic_search(&self, query: &str) -> Result<Value> {
         let all_ids = self.storage.borrow().list_ids()
-            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {}", e)))?;
+            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {e}")))?;
 
         let mut results = Vec::new();
         
@@ -194,25 +194,23 @@ impl Arbores {
                 if let Some(desc) = &expr.description {
                     // 简单的文本匹配（后续可以替换为更复杂的语义搜索）
                     if desc.to_lowercase().contains(&query.to_lowercase()) {
-                        let mut result_entry = Vec::new();
-
-                        // ("id" . id)
-                        result_entry.push(Value::Cons(
-                            Rc::new(Value::String("id".to_string())),
-                            Rc::new(Value::Integer(id as i64)),
-                        ));
-
-                        // ("score" . score)
-                        result_entry.push(Value::Cons(
-                            Rc::new(Value::String("score".to_string())),
-                            Rc::new(Value::Float(0.8)),
-                        ));
-
-                        // ("description" . description)
-                        result_entry.push(Value::Cons(
-                            Rc::new(Value::String("description".to_string())),
-                            Rc::new(Value::String(desc.clone())),
-                        ));
+                        let result_entry = vec![
+                            // ("id" . id)
+                            Value::Cons(
+                                Rc::new(Value::String("id".to_string())),
+                                Rc::new(Value::Integer(id as i64)),
+                            ),
+                            // ("score" . score)
+                            Value::Cons(
+                                Rc::new(Value::String("score".to_string())),
+                                Rc::new(Value::Float(0.8)),
+                            ),
+                            // ("description" . description)
+                            Value::Cons(
+                                Rc::new(Value::String("description".to_string())),
+                                Rc::new(Value::String(desc.clone())),
+                            ),
+                        ];
 
                         results.push(Self::vec_to_list(result_entry));
                     }
@@ -231,7 +229,7 @@ impl Arbores {
     /// 前缀匹配的辅助方法
     fn find_by_prefix(&self, prefix: &str) -> Result<Vec<SExpressionId>> {
         let all_ids = self.storage.borrow().list_ids()
-            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {}", e)))?;
+            .map_err(|e| SchemeError::RuntimeError(format!("Storage error: {e}")))?;
 
         let mut matching_ids = Vec::new();
 

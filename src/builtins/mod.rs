@@ -28,7 +28,7 @@ pub fn add(args: &[Value]) -> Result<Value> {
                 }
             },
             _ => return Err(SchemeError::TypeError(
-                format!("+ expects numbers, got {}", arg)
+                format!("+ expects numbers, got {arg}")
             )),
         }
     }
@@ -77,7 +77,7 @@ pub fn subtract(args: &[Value]) -> Result<Value> {
                 result -= f;
             },
             _ => return Err(SchemeError::TypeError(
-                format!("- expects numbers, got {}", arg)
+                format!("- expects numbers, got {arg}")
             )),
         }
     }
@@ -116,7 +116,7 @@ pub fn multiply(args: &[Value]) -> Result<Value> {
                 }
             },
             _ => return Err(SchemeError::TypeError(
-                format!("* expects numbers, got {}", arg)
+                format!("* expects numbers, got {arg}")
             )),
         }
     }
@@ -178,7 +178,7 @@ pub fn divide(args: &[Value]) -> Result<Value> {
                 result /= f;
             },
             _ => return Err(SchemeError::TypeError(
-                format!("/ expects numbers, got {}", arg)
+                format!("/ expects numbers, got {arg}")
             )),
         }
     }

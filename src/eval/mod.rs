@@ -1,126 +1,140 @@
 use std::rc::Rc;
+use std::cell::RefCell;
 use crate::types::{Value, SchemeError, Result};
-use crate::env::Environment;
+use crate::env::{Environment, EnvironmentManager, EnvironmentId};
 use crate::builtins;
 
 /// 求值器
 pub struct Evaluator {
-    /// 全局环境
-    pub global_env: Rc<Environment>,
+    /// 环境管理器
+    env_manager: Rc<RefCell<EnvironmentManager>>,
+    /// 全局环境 ID
+    global_env_id: EnvironmentId,
 }
 
 impl Evaluator {
     /// 创建新的求值器
     pub fn new() -> Self {
-        let mut global_env = Environment::new();
+        let env_manager = Rc::new(RefCell::new(EnvironmentManager::new()));
+        let global_env = Environment::new(Rc::clone(&env_manager));
+        let global_env_id = global_env.id();
         
         // 注册内置函数
-        Self::register_builtins(&mut global_env);
+        Self::register_builtins(&global_env);
         
         Evaluator {
-            global_env: Rc::new(global_env),
+            env_manager,
+            global_env_id,
+        }
+    }
+
+    /// 获取全局环境
+    pub fn global_env(&self) -> Environment {
+        Environment {
+            id: self.global_env_id,
+            manager: Rc::clone(&self.env_manager),
         }
     }
 
     /// 注册内置函数
-    fn register_builtins(env: &mut Environment) {
+    fn register_builtins(env: &Environment) {
         // 算术运算
         env.define("+".to_string(), Value::BuiltinFunction {
             name: "+".to_string(),
             func: builtins::add,
             arity: None, // 可变参数
-        });
+        }).unwrap();
         
         env.define("-".to_string(), Value::BuiltinFunction {
             name: "-".to_string(),
             func: builtins::subtract,
             arity: None,
-        });
+        }).unwrap();
         
         env.define("*".to_string(), Value::BuiltinFunction {
             name: "*".to_string(),
             func: builtins::multiply,
             arity: None,
-        });
+        }).unwrap();
         
         env.define("/".to_string(), Value::BuiltinFunction {
             name: "/".to_string(),
             func: builtins::divide,
             arity: None,
-        });
+        }).unwrap();
 
         // 比较运算
         env.define("=".to_string(), Value::BuiltinFunction {
             name: "=".to_string(),
             func: builtins::equal,
             arity: Some(2),
-        });
+        }).unwrap();
         
         env.define("<".to_string(), Value::BuiltinFunction {
             name: "<".to_string(),
             func: builtins::less_than,
             arity: Some(2),
-        });
+        }).unwrap();
 
         // 列表操作
         env.define("cons".to_string(), Value::BuiltinFunction {
             name: "cons".to_string(),
             func: builtins::cons,
             arity: Some(2),
-        });
+        }).unwrap();
         
         env.define("car".to_string(), Value::BuiltinFunction {
             name: "car".to_string(),
             func: builtins::car,
             arity: Some(1),
-        });
+        }).unwrap();
         
         env.define("cdr".to_string(), Value::BuiltinFunction {
             name: "cdr".to_string(),
             func: builtins::cdr,
             arity: Some(1),
-        });
+        }).unwrap();
         
         env.define("list".to_string(), Value::BuiltinFunction {
             name: "list".to_string(),
             func: builtins::list,
             arity: None,
-        });
+        }).unwrap();
 
         // 类型谓词
         env.define("null?".to_string(), Value::BuiltinFunction {
             name: "null?".to_string(),
             func: builtins::is_null,
             arity: Some(1),
-        });
+        }).unwrap();
         
         env.define("pair?".to_string(), Value::BuiltinFunction {
             name: "pair?".to_string(),
             func: builtins::is_pair,
             arity: Some(1),
-        });
+        }).unwrap();
         
         env.define("number?".to_string(), Value::BuiltinFunction {
             name: "number?".to_string(),
             func: builtins::is_number,
             arity: Some(1),
-        });
+        }).unwrap();
         
         env.define("symbol?".to_string(), Value::BuiltinFunction {
             name: "symbol?".to_string(),
             func: builtins::is_symbol,
             arity: Some(1),
-        });
+        }).unwrap();
         
         env.define("string?".to_string(), Value::BuiltinFunction {
             name: "string?".to_string(),
             func: builtins::is_string,
             arity: Some(1),
-        });
+        }).unwrap();
     }
 
     /// 求值表达式
-    pub fn eval(&self, expr: &Value, env: Rc<Environment>) -> Result<Value> {
+    pub fn eval(&self, expr: &Value, env: &Environment) -> Result<Value> {
         match expr {
             // 自求值表达式
             Value::Integer(_) | Value::Float(_) | Value::String(_) | Value::Bool(_) => {
@@ -146,6 +160,7 @@ impl Evaluator {
                             "quote" => self.eval_quote(&list[1..], env),
                             "if" => self.eval_if(&list[1..], env),
                             "define" => self.eval_define(&list[1..], env),
+                            "set!" => self.eval_set(&list[1..], env),
                             "lambda" => self.eval_lambda(&list[1..], env),
                             "let" => self.eval_let(&list[1..], env),
                             "begin" => self.eval_begin(&list[1..], env),
@@ -159,12 +174,12 @@ impl Evaluator {
                 }
             },
             
-            _ => Err(SchemeError::RuntimeError(format!("Cannot evaluate {}", expr))),
+            _ => Err(SchemeError::RuntimeError(format!("Cannot evaluate {expr}"))),
         }
     }
 
     /// 求值 quote 特殊形式
-    fn eval_quote(&self, args: &[Value], _env: Rc<Environment>) -> Result<Value> {
+    fn eval_quote(&self, args: &[Value], _env: &Environment) -> Result<Value> {
         if args.len() != 1 {
             return Err(SchemeError::ArityError("quote requires exactly 1 argument".to_string()));
         }
@@ -172,12 +187,12 @@ impl Evaluator {
     }
 
     /// 求值 if 特殊形式
-    fn eval_if(&self, args: &[Value], env: Rc<Environment>) -> Result<Value> {
+    fn eval_if(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() < 2 || args.len() > 3 {
             return Err(SchemeError::ArityError("if requires 2 or 3 arguments".to_string()));
         }
 
-        let condition = self.eval(&args[0], env.clone())?;
+        let condition = self.eval(&args[0], env)?;
         
         if condition.is_truthy() {
             self.eval(&args[1], env)
@@ -189,26 +204,39 @@ impl Evaluator {
     }
 
     /// 求值 define 特殊形式
-    fn eval_define(&self, args: &[Value], env: Rc<Environment>) -> Result<Value> {
+    fn eval_define(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() != 2 {
             return Err(SchemeError::ArityError("define requires exactly 2 arguments".to_string()));
         }
 
         match &args[0] {
-            Value::Symbol(_name) => {
-                let _value = self.eval(&args[1], env.clone())?;
-                // 注意：这里需要修改环境，但 Rc 是不可变的
-                // 在实际实现中需要使用 RefCell 或其他方案
-                Err(SchemeError::RuntimeError(
-                    "Cannot modify environment through Rc - need RefCell".to_string()
-                ))
+            Value::Symbol(name) => {
+                let value = self.eval(&args[1], env)?;
+                env.define(name.clone(), value)?;
+                Ok(Value::Nil)
             },
             _ => Err(SchemeError::TypeError("define expects a symbol".to_string())),
         }
     }
 
+    /// 求值 set! 特殊形式
+    fn eval_set(&self, args: &[Value], env: &Environment) -> Result<Value> {
+        if args.len() != 2 {
+            return Err(SchemeError::ArityError("set! requires exactly 2 arguments".to_string()));
+        }
+
+        match &args[0] {
+            Value::Symbol(name) => {
+                let value = self.eval(&args[1], env)?;
+                env.set(name, value)?;
+                Ok(Value::Nil)
+            },
+            _ => Err(SchemeError::TypeError("set! expects a symbol".to_string())),
+        }
+    }
+
     /// 求值 lambda 特殊形式
-    fn eval_lambda(&self, args: &[Value], env: Rc<Environment>) -> Result<Value> {
+    fn eval_lambda(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() != 2 {
             return Err(SchemeError::ArityError("lambda requires exactly 2 arguments".to_string()));
         }
@@ -240,12 +268,12 @@ impl Evaluator {
         Ok(Value::Lambda {
             params,
             body: Rc::new(args[1].clone()),
-            env: env.clone(),
+            env_id: env.id(),
         })
     }
 
     /// 求值 let 特殊形式
-    fn eval_let(&self, args: &[Value], env: Rc<Environment>) -> Result<Value> {
+    fn eval_let(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() != 2 {
             return Err(SchemeError::ArityError("let requires exactly 2 arguments".to_string()));
         }
@@ -260,7 +288,7 @@ impl Evaluator {
                         if let Some(pair) = binding.to_vec() {
                             if pair.len() == 2 {
                                 if let Value::Symbol(name) = &pair[0] {
-                                    let value = self.eval(&pair[1], env.clone())?;
+                                    let value = self.eval(&pair[1], env)?;
                                     bindings.push((name.clone(), value));
                                 } else {
                                     return Err(SchemeError::TypeError(
@@ -293,35 +321,35 @@ impl Evaluator {
         let new_env = env.extend(names, values)?;
 
         // 在新环境中求值 body
-        self.eval(&args[1], Rc::new(new_env))
+        self.eval(&args[1], &new_env)
     }
 
     /// 求值 begin 特殊形式
-    fn eval_begin(&self, args: &[Value], env: Rc<Environment>) -> Result<Value> {
+    fn eval_begin(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.is_empty() {
             return Ok(Value::Nil);
         }
 
         let mut result = Value::Nil;
         for expr in args {
-            result = self.eval(expr, env.clone())?;
+            result = self.eval(expr, env)?;
         }
         Ok(result)
     }
 
     /// 求值函数应用
-    fn eval_application(&self, exprs: &[Value], env: Rc<Environment>) -> Result<Value> {
+    fn eval_application(&self, exprs: &[Value], env: &Environment) -> Result<Value> {
         if exprs.is_empty() {
             return Ok(Value::Nil);
         }
 
         // 求值函数
-        let func = self.eval(&exprs[0], env.clone())?;
+        let func = self.eval(&exprs[0], env)?;
         
         // 求值参数
         let mut args = Vec::new();
         for arg_expr in &exprs[1..] {
-            args.push(self.eval(arg_expr, env.clone())?);
+            args.push(self.eval(arg_expr, env)?);
         }
 
         // 应用函数
@@ -338,20 +366,21 @@ impl Evaluator {
                 func(&args)
             },
             
-            Value::Lambda { params, body, env: closure_env } => {
+            Value::Lambda { params, body, env_id } => {
                 if args.len() != params.len() {
                     return Err(SchemeError::ArityError(
                         format!("Expected {} arguments, got {}", params.len(), args.len())
                     ));
                 }
                 
-                // 创建新环境绑定参数
+                // 从环境ID创建新环境绑定参数
+                let closure_env = Environment::from_id(env_id, self.env_manager.clone());
                 let new_env = closure_env.extend(params, args)?;
-                self.eval(&body, Rc::new(new_env))
+                self.eval(&body, &new_env)
             },
             
             _ => Err(SchemeError::TypeError(
-                format!("Cannot apply non-function: {}", func)
+                format!("Cannot apply non-function: {func}")
             )),
         }
     }
@@ -359,7 +388,13 @@ impl Evaluator {
     /// 便利方法：求值字符串
     pub fn eval_string(&self, input: &str) -> Result<Value> {
         let expr = crate::parser::Parser::parse(input)?;
-        self.eval(&expr, self.global_env.clone())
+        let global_env = Environment::from_id(self.global_env_id, self.env_manager.clone());
+        self.eval(&expr, &global_env)
+    }
+
+    /// 获取全局环境
+    pub fn get_global_env(&self) -> Environment {
+        Environment::from_id(self.global_env_id, self.env_manager.clone())
     }
 }
 
@@ -415,5 +450,45 @@ mod tests {
         assert_eq!(evaluator.eval_string("(if #t 1 2)").unwrap(), Value::Integer(1));
         assert_eq!(evaluator.eval_string("(if #f 1 2)").unwrap(), Value::Integer(2));
         assert_eq!(evaluator.eval_string("(if #f 1)").unwrap(), Value::Nil);
+    }
+
+    #[test]
+    fn test_define_and_lookup() {
+        let evaluator = Evaluator::new();
+        
+        // 测试 define
+        assert_eq!(evaluator.eval_string("(define x 42)").unwrap(), Value::Nil);
+        assert_eq!(evaluator.eval_string("x").unwrap(), Value::Integer(42));
+        
+        // 测试字符串变量
+        assert_eq!(evaluator.eval_string("(define name \"hello\")").unwrap(), Value::Nil);
+        assert_eq!(evaluator.eval_string("name").unwrap(), Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_set_variable() {
+        let evaluator = Evaluator::new();
+        
+        // 先定义一个变量
+        evaluator.eval_string("(define x 10)").unwrap();
+        assert_eq!(evaluator.eval_string("x").unwrap(), Value::Integer(10));
+        
+        // 使用 set! 修改变量
+        assert_eq!(evaluator.eval_string("(set! x 20)").unwrap(), Value::Nil);
+        assert_eq!(evaluator.eval_string("x").unwrap(), Value::Integer(20));
+    }
+
+    #[test]
+    fn test_lambda_with_environment() {
+        let evaluator = Evaluator::new();
+        
+        // 测试 lambda 函数和环境
+        evaluator.eval_string("(define add (lambda (x y) (+ x y)))").unwrap();
+        assert_eq!(evaluator.eval_string("(add 3 4)").unwrap(), Value::Integer(7));
+        
+        // 测试闭包
+        evaluator.eval_string("(define make-adder (lambda (n) (lambda (x) (+ x n))))").unwrap();
+        evaluator.eval_string("(define add5 (make-adder 5))").unwrap();
+        assert_eq!(evaluator.eval_string("(add5 10)").unwrap(), Value::Integer(15));
     }
 }

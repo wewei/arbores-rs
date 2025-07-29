@@ -32,10 +32,10 @@ impl fmt::Display for Token {
             Token::Quasiquote => write!(f, "`"),
             Token::Unquote => write!(f, ","),
             Token::UnquoteSplicing => write!(f, ",@"),
-            Token::Integer(n) => write!(f, "{}", n),
-            Token::Float(n) => write!(f, "{}", n),
-            Token::String(s) => write!(f, "\"{}\"", s),
-            Token::Symbol(s) => write!(f, "{}", s),
+            Token::Integer(n) => write!(f, "{n}"),
+            Token::Float(n) => write!(f, "{n}"),
+            Token::String(s) => write!(f, "\"{s}\""),
+            Token::Symbol(s) => write!(f, "{s}"),
             Token::Boolean(b) => write!(f, "#{}", if *b { "t" } else { "f" }),
             Token::Dot => write!(f, "."),
             Token::EOF => write!(f, "<EOF>"),
@@ -54,7 +54,7 @@ impl Lexer {
     /// 创建新的词法分析器
     pub fn new(input: &str) -> Self {
         let chars: Vec<char> = input.chars().collect();
-        let current_char = chars.get(0).copied();
+        let current_char = chars.first().copied();
         
         Lexer {
             input: chars,
@@ -210,7 +210,7 @@ impl Lexer {
                     return Ok(self.read_symbol());
                 },
                 Some(ch) => {
-                    return Err(format!("Unexpected character: {}", ch));
+                    return Err(format!("Unexpected character: {ch}"));
                 }
             }
         }
