@@ -6,21 +6,11 @@
 - **Position 结构**: 已定义 `Position` 结构体，包含行号和列号信息
 - **LocatedToken**: 词法分析器已支持带位置信息的 Token
 - **SchemeError**: 错误类型已包含可选的 `Position` 字段
-- **部分支持**: Parser 中部分错误已使用位置信息，但不够全面
 
 ### 1.2 存在的问题
-1. **位置信息传递不完整**: 
-   - Parser 中仅部分错误包含位置信息
-   - Evaluator 中缺乏位置信息传递机制
-   - 内置函数调用时丢失位置信息
-
-2. **Value 类型缺乏位置信息**:
-   - 解析后的 `Value` 不包含原始位置信息
-   - 运行时错误难以定位到源码位置
-
-3. **错误传播链断裂**:
-   - 嵌套表达式求值时位置信息丢失
-   - 函数调用栈缺乏位置追踪
+1. **位置信息传递不完整**: Evaluator 中缺乏位置信息传递机制
+2. **Value 类型缺乏位置信息**: 解析后的 `Value` 不包含原始位置信息
+3. **错误传播链断裂**: 嵌套表达式求值时位置信息丢失
 
 ## 2. 设计目标
 
@@ -39,116 +29,8 @@
 
 ### 3.1 数据结构设计
 
-#### 3.1.1 扩展 Value 类型
+#### 3.1.1 LocatedValue 包装类型
 ```rust
-#[derive(Debug, Clone)]
-pub enum Value {
-    // 现有变体...
-    // 每个变体都可能需要位置信息
-}
-
-// 新增位置信息包装类型
-#[derive(Debug, Clone)]
-pub struct LocatedValue {
-    pub value: Value,
-    pub position: Option<Position>,
-}
-```
-
-#### 3.1.2 执行上下文
-```rust
-#[derive(Debug, Clone)]
-pub struct ExecutionContext {
-    pub current_position: Option<Position>,
-    pub call_stack: Vec<CallFrame>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CallFrame {
-    pub function_name: Option<String>,
-    pub position: Position,
-    pub expression: String, // 用于调试显示
-}
-```
-
-### 3.2 分层实现策略
-
-#### 3.2.1 第一层：Parser 增强
-- **目标**: 确保所有解析错误都包含准确的位置信息
-- **实现**:
-  - 完善 `parse_expression` 中的错误位置信息
-  - 改进 `parse_list` 中的位置追踪
-  - 为引用语法添加位置信息
-
-#### 3.2.2 第二层：Value 位置注解
-- **目标**: 在解析阶段为 Value 添加位置信息
-- **实现方案**:
-  - **方案A**: 扩展现有 Value 枚举，为每个变体添加位置字段
-  - **方案B**: 创建 LocatedValue 包装类型
-  - **推荐方案B**: 保持现有 Value 类型简洁，通过包装提供位置信息
-
-#### 3.2.3 第三层：Evaluator 位置传播
-- **目标**: 在求值过程中维护和传播位置信息
-- **实现**:
-  - 修改 `eval` 方法签名，接受和返回 LocatedValue
-  - 在函数调用时维护调用栈
-  - 确保错误发生时能获取当前位置
-
-#### 3.2.4 第四层：内置函数位置支持
-- **目标**: 内置函数调用时保持位置信息
-- **实现**:
-  - 修改内置函数签名，接受位置信息
-  - 在运行时错误中包含调用位置
-  - 提供统一的错误创建机制
-
-### 3.3 实现优先级
-
-#### 阶段一：Parser 完整性 (高优先级)
-1. 完善所有解析错误的位置信息
-2. 确保位置信息的准确性
-3. 添加测试验证位置信息正确性
-
-#### 阶段二：Value 位置注解 (中优先级)  
-1. 实现 LocatedValue 包装类型
-2. 修改 Parser 返回 LocatedValue
-3. 更新相关数据结构和方法
-
-#### 阶段三：Evaluator 位置传播 (中优先级)
-1. 修改 eval 方法支持位置信息
-2. 实现执行上下文和调用栈
-3. 确保运行时错误包含位置
-
-#### 阶段四：内置函数增强 (低优先级)
-1. 更新内置函数接口
-2. 实现位置感知的错误报告
-3. 优化错误消息格式
-
-## 4. 具体实现计划
-
-### 4.1 Phase 1: Parser 位置信息完善
-
-#### 4.1.1 需要修改的文件
-- `src/parser/mod.rs`: 完善位置信息处理
-- `src/types/mod.rs`: 可能需要扩展错误类型
-
-#### 4.1.2 具体任务
-1. **parse_expression 增强**:
-   - 确保所有分支都有位置信息
-   - 特别关注符号解析、数值解析等
-
-2. **parse_list 增强**:
-   - 为列表解析错误添加精确位置
-   - 改进 dotted pair 错误处理
-
-3. **测试用例**:
-   - 添加位置信息验证测试
-   - 确保错误消息包含正确位置
-
-### 4.2 Phase 2: LocatedValue 实现
-
-#### 4.2.1 新增类型定义
-```rust
-// 在 types/mod.rs 中添加
 #[derive(Debug, Clone)]
 pub struct LocatedValue {
     pub value: Value,
@@ -168,221 +50,135 @@ impl LocatedValue {
 }
 ```
 
-#### 4.2.2 Parser 接口更新
-- 修改 `parse_expression` 返回 `LocatedValue`
-- 更新所有调用点
+#### 3.1.2 链式不可变执行上下文
+```rust
+#[derive(Debug, Clone)]
+pub struct EvaluationContext {
+    pub current_position: Option<Position>,
+    pub function_name: Option<String>,
+    pub parent: Option<Box<EvaluationContext>>, // 链式结构
+}
+
+impl EvaluationContext {
+    pub fn new() -> Self {
+        Self {
+            current_position: None,
+            function_name: None,
+            parent: None,
+        }
+    }
+    
+    /// 进入新的调用层级，返回新的上下文
+    pub fn enter_call(&self, position: Option<Position>, function_name: Option<String>) -> Self {
+        Self {
+            current_position: position,
+            function_name,
+            parent: Some(Box::new(self.clone())),
+        }
+    }
+    
+    /// 获取完整调用栈
+    pub fn call_stack(&self) -> Vec<CallFrame> {
+        let mut stack = Vec::new();
+        let mut current = Some(self);
+        
+        while let Some(ctx) = current {
+            if let Some(pos) = ctx.current_position {
+                stack.push(CallFrame {
+                    function_name: ctx.function_name.clone(),
+                    position: pos,
+                    expression: String::new(),
+                });
+            }
+            current = ctx.parent.as_ref().map(|p| p.as_ref());
+        }
+        
+        stack.reverse(); // 从最顶层开始
+        stack
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CallFrame {
+    pub function_name: Option<String>,
+    pub position: Position,
+    pub expression: String,
+}
+```
+
+### 3.2 API 设计原则
+
+#### 3.2.1 参数扩展而非方法复制
+在现有方法中添加可选的 `context` 参数，避免创建重复方法：
+
+```rust
+// ✅ 推荐：扩展现有方法
+pub fn eval(&self, expr: &Value, env: &Environment, context: Option<&EvaluationContext>) -> Result<Value>
+pub fn eval_string(&self, input: &str, context: Option<&EvaluationContext>) -> Result<Value>
+
+// ❌ 避免：创建重复方法
+pub fn eval_with_context(&self, expr: &Value, env: &Environment, context: &EvaluationContext) -> Result<Value>
+```
+
+#### 3.2.2 调用模式
+```rust
+// 非调试模式
+let result = evaluator.eval(&expr, &env, None)?;
+
+// 调试模式
+let context = EvaluationContext::new();
+let result = evaluator.eval(&expr, &env, Some(&context))?;
+
+// 递归调用时自动创建子上下文
+let child_context = context.map(|ctx| ctx.enter_call(Some(position), Some(func_name)));
+let result = evaluator.eval(&expr, &env, child_context.as_ref())?;
+```
+
+## 4. 实施计划
+
+### 4.1 阶段一：Parser 位置信息完善 ✅ 已完成
+- 完善所有解析错误的位置信息
+- 为引用语法添加位置信息
+- 修复 Lexer 位置跟踪问题
+- 添加全面的测试用例
+
+### 4.2 阶段二：LocatedValue 实现 ✅ 已完成
+- 实现 LocatedValue 包装类型
+- 扩展 Parser 支持 LocatedValue
+- Position 结构优化（添加 Copy trait）
 - 保持向后兼容性
 
-### 4.3 Phase 3: Evaluator 位置传播
+### 4.3 阶段三：Evaluator 位置传播 🔄 进行中
 
-#### 4.3.1 执行上下文实现
-```rust
-// 在 eval/mod.rs 中添加
-pub struct EvaluationContext {
-    pub position_stack: Vec<Position>,
-    pub call_stack: Vec<CallFrame>,
-    pub source_lines: Vec<String>, // 用于错误显示
-}
-```
+#### 4.3.1 当前状态
+- ✅ 已扩展现有 API 支持可选上下文参数
+- ✅ CoreEvaluator::eval 现在接受 `Option<&EvaluationContext>`
+- ✅ REPL 支持调试模式
 
-#### 4.3.2 eval 方法签名更新
-```rust
-impl Evaluator {
-    pub fn eval_with_context(
-        &self,
-        expr: &LocatedValue,
-        env: &Environment,
-        context: &mut EvaluationContext,
-    ) -> Result<LocatedValue>
-}
-```
+#### 4.3.2 待完成任务
+1. **重新实现 EvaluationContext** - 使用链式不可变结构
+2. **位置信息传播** - 在特殊形式和内置函数中传递位置信息
+3. **调用栈管理** - 自动构建和维护调用栈
+4. **错误增强** - 在错误中包含完整的调用栈信息
 
-### 4.4 Phase 4: 错误显示增强
-
-#### 4.4.1 错误格式化
-- 显示错误行及上下文
-- 使用箭头指示错误位置
-- 提供多行错误时的范围显示
-
-#### 4.4.2 示例错误输出
-```
-Error: Undefined variable 'foo' at line 3, column 8
-
-  1 | (define x 42)
-  2 | (define y (+ x 10))
-  3 | (display foo)
-    |          ^^^ undefined variable
-```
-
-## 5. 测试策略
-
-### 5.1 单元测试
-- 每个阶段都要有对应的测试用例
-- 验证位置信息的准确性
-- 测试错误传播的正确性
-
-### 5.2 集成测试
-- 端到端的位置信息验证
-- 复杂嵌套表达式的位置追踪
-- 错误格式化的视觉验证
-
-### 5.3 性能测试
-- 位置信息对性能的影响
-- 内存使用情况监控
-- 必要时进行优化
-
-## 6. 风险评估与缓解
-
-### 6.1 主要风险
-1. **性能开销**: 位置信息可能增加内存和计算开销
-2. **代码复杂性**: 可能使代码变得复杂难维护
-3. **向后兼容**: API 变更可能影响现有代码
-
-### 6.2 缓解策略
-1. **性能**: 
-   - 使用 Option 类型避免不必要的位置信息
-   - 在 release 版本中可考虑编译时优化
-   
-2. **复杂性**:
-   - 分阶段实现，每次只改动核心部分
-   - 保持良好的代码组织和文档
-   
-3. **兼容性**:
-   - 提供兼容性包装函数
-   - 逐步迁移现有 API
-
-## 7. 总结
-
-这个设计提供了一个系统性的方案来为 Arbores Scheme 解释器添加完整的位置信息支持。通过分阶段实施，我们可以逐步改进错误报告的质量，最终提供专业级的调试体验。
-
-实施时建议按照优先级顺序进行，先确保基础的位置信息准确性，再逐步扩展到更高级的功能。每个阶段都应该有充分的测试来保证质量。
-
-## 8. 实施进度报告
-
-### ✅ 已完成的阶段
-
-#### 🎯 **阶段一：Parser 位置信息完善** (已完成)
-
-**完成的任务：**
-1. **完善 parse_expression 中的错误位置信息**
-   - 为所有引用语法（Quote、Quasiquote、Unquote、UnquoteSplicing）添加位置信息
-   - 改进错误传播，包含上下文信息（"In quoted expression", "In unquoted expression" 等）
-   - 确保所有解析分支都有准确的位置信息
-
-2. **改进 parse_list 中的位置追踪**
-   - 为 dotted pair 错误添加精确位置信息
-   - 改进列表元素解析的错误传播
-   - 增强错误消息的上下文信息（"In list element", "In dotted pair tail"）
-
-3. **修复 Lexer 位置跟踪问题**
-   - 解决了 `tokenize_with_positions` 中位置信息指向空白字符而非实际 token 的问题
-   - 实现了 `next_token_position` 方法，确保位置信息准确指向 token 起始位置
-   - 修复了多行解析时位置信息错误的问题
-
-4. **添加全面的测试用例**
-   - 位置信息准确性验证测试
-   - 多行位置信息测试
-   - 错误传播测试
-   - 嵌套表达式位置测试
-
-**测试结果：**
-- ✅ 所有基础解析测试通过
-- ✅ 位置信息测试通过（14个测试用例）
-- ✅ 错误位置显示正确（行号、列号精确）
-- ✅ 错误上下文信息丰富
-
-#### 🎯 **阶段二：LocatedValue 实现** (已完成)
-
-**完成的任务：**
-1. **实现 LocatedValue 包装类型**
-   - 在 `types/mod.rs` 中添加了 `LocatedValue` 结构体
-   - 包含 `value`、`position`、`source_text` 字段
-   - 实现了便利方法：`new`、`without_position`、`with_source`、`value()`、`position()` 等
-   - 提供了 `Display`、`PartialEq` 实现和 `From<Value>` 转换
-
-2. **扩展 Parser 支持 LocatedValue**
-   - 添加了 `parse_expression_located` 方法
-   - 添加了 `parse_list_located` 方法
-   - 添加了 `parse_program_located` 方法
-   - 提供了便利方法：`parse_located`、`parse_multiple_located`
-   - 保持了向后兼容性（原有方法继续工作）
-
-3. **Position 结构优化**
-   - 为 `Position` 添加了 `Copy` trait，简化了所有权管理
-   - 避免了不必要的克隆操作
-
-4. **全面的 LocatedValue 测试**
-   - 基本原子值位置信息测试
-   - 列表位置信息测试
-   - 引用语法位置信息测试
-   - 多个表达式位置信息测试
-   - 多行表达式位置信息测试
-
-**测试结果：**
-- ✅ 所有 LocatedValue 测试通过（5个新测试用例）
-- ✅ 位置信息精确到行号、列号
-- ✅ 多行解析位置信息正确
-- ✅ 向后兼容性保持完好
-
-### 🎯 **当前状态总结**
-
-**已实现的功能：**
-1. **完整的 Parser 位置信息支持**
-   - 所有解析错误都包含精确的位置信息
-   - 丰富的错误上下文信息
-   - 支持多行源码的准确定位
-
-2. **LocatedValue 包装系统**
-   - 为所有解析结果提供位置信息
-   - 灵活的 API 设计
-   - 良好的向后兼容性
-
-3. **健壮的错误处理**
-   - 精确的错误定位（行号、列号）
-   - 上下文感知的错误消息
-   - 错误传播链完整
-
-**质量保证：**
-- ✅ 49 个测试全部通过
-- ✅ 位置信息精确到字符级别
-- ✅ 错误消息格式专业化
-- ✅ 代码结构清晰，易于维护
-
-### 🔄 **下一步计划**
-
-#### 阶段三：Evaluator 位置传播 (待实施) - **设计调整**
-基于重构后的模块化架构，第三阶段的实施策略需要调整：
-
-**新的实施策略：**
-1. **创建 ContextualEvaluator 模块** (`src/eval/contextual.rs`)
-   - 基于 `CoreEvaluator` 扩展，支持位置信息
-   - 实现执行上下文和调用栈管理
-   - 保持与现有架构的兼容性
-
-2. **扩展 SpecialFormsEvaluator**
-   - 添加带位置信息的特殊形式求值方法
-   - 保持现有 API 不变，提供新的位置感知版本
-
-3. **位置感知的内置函数**
-   - 在 `builtins.rs` 中添加位置感知版本
-   - 保持向后兼容性
-
-**优势：**
-- ✅ 不破坏现有架构
-- ✅ 可以逐步迁移
-- ✅ 保持代码清晰性
-- ✅ 便于测试和验证
-
-#### 阶段四：内置函数增强 (待实施)
-- 更新内置函数接口支持位置信息
+### 4.4 阶段四：内置函数增强 📅 计划中
+- 扩展内置函数支持位置信息
 - 实现位置感知的错误报告
 - 优化错误消息格式化
 
-### 📊 **技术指标**
+## 5. 设计优势
 
+### 5.1 链式不可变结构的优势
+- **🔧 无所有权问题**：不可变引用避免借用检查器冲突
+- **🧩 函数式设计**：符合Scheme的函数式编程理念
+- **🚀 性能优化**：调试模式下才创建上下文，正常模式无开销
+- **📝 API简洁**：单一方法支持两种模式
+- **🔄 自然作用域**：上下文生命周期与函数调用自然对齐
+
+### 5.2 技术指标
 **性能影响：**
 - 编译时间增加：<5%
-- 运行时内存：每个值额外 ~24 字节（Position + Option）
+- 运行时内存：调试模式下每个调用额外 ~32 字节
 - 解析性能：几乎无影响
 
 **代码质量：**
@@ -395,81 +191,30 @@ Error: Undefined variable 'foo' at line 3, column 8
 - 错误上下文：从简单 → 丰富的层次化信息
 - 调试效率：显著提升
 
----
+## 6. 错误显示示例
 
-## 9. 第三阶段详细技术设计
+### 6.1 期望的错误输出
+```
+Error: Undefined variable 'foo' at line 3, column 8
 
-### 9.1 架构调整分析
+Call stack:
+  1. <main> at line 1, column 1
+  2. function 'calculate' at line 2, column 5
+  3. lambda at line 3, column 8
 
-**重构后的优势：**
-- **模块化清晰**: `core.rs`、`special_forms.rs`、`builtins.rs` 职责明确
-- **接口稳定**: 现有 API 保持不变，便于渐进式迁移
-- **扩展性好**: 可以基于现有模块创建增强版本
-
-### 9.2 新的实施计划
-
-#### 9.2.1 创建 ContextualEvaluator
-```rust
-// src/eval/contextual.rs
-pub struct ContextualEvaluator {
-    core: CoreEvaluator,
-    context: EvaluationContext,
-}
-
-impl ContextualEvaluator {
-    pub fn eval_with_context(
-        &self,
-        expr: &LocatedValue,
-        env: &Environment,
-        context: &mut EvaluationContext,
-    ) -> Result<LocatedValue> {
-        // 基于 CoreEvaluator 扩展，添加位置信息支持
-    }
-}
+  1 | (define calculate
+  2 |   (lambda (x)
+  3 |     (+ x foo)))
+    |          ^^^ undefined variable
 ```
 
-#### 9.2.2 扩展 SpecialFormsEvaluator
-```rust
-// 在 special_forms.rs 中添加
-impl SpecialFormsEvaluator {
-    // 现有方法保持不变
-    pub fn eval_quote(args: &[Value], _env: &Environment) -> Result<Value> { ... }
-    
-    // 新增位置感知版本
-    pub fn eval_quote_with_context(
-        args: &[LocatedValue],
-        env: &Environment,
-        context: &mut EvaluationContext,
-    ) -> Result<LocatedValue> { ... }
-}
-```
+## 7. 总结
 
-#### 9.2.3 位置感知的内置函数
-```rust
-// 在 builtins.rs 中添加
-pub fn register_builtins_with_context(env: &Environment) {
-    // 注册带位置信息的内置函数版本
-}
-```
+这个设计通过链式不可变结构解决了所有权问题，为 Arbores Scheme 解释器提供了完整的位置信息支持。设计重点是：
 
-### 9.3 实施优先级
+1. **简洁的API**：扩展现有方法而非创建新方法
+2. **零成本抽象**：非调试模式下无性能开销
+3. **函数式设计**：符合Scheme语言特性
+4. **渐进式实施**：保持向后兼容性
 
-1. **Phase 3.1**: 创建 ContextualEvaluator 基础框架
-2. **Phase 3.2**: 实现执行上下文和调用栈
-3. **Phase 3.3**: 扩展特殊形式支持位置信息
-4. **Phase 3.4**: 位置感知的内置函数
-5. **Phase 3.5**: 集成测试和性能优化
-
-### 9.4 兼容性策略
-
-- **渐进式迁移**: 现有代码继续工作，新功能通过新接口提供
-- **功能标志**: 可选的编译时功能标志控制位置信息支持
-- **性能优化**: 在 release 模式下可选择性禁用位置信息
-
-## 10. 设计文档状态
-- ✅ 阶段一和二已完成实施
-- ✅ 重构完成，架构优化
-- 📝 阶段三详细设计已确定，基于新架构调整
-- 🎯 项目按计划稳步推进
-
-这个设计文档将持续更新，记录实施过程中的经验和教训。
+当前已完成前两个阶段，第三阶段正在进行中，重点是实现链式不可变上下文结构和位置信息传播机制。
