@@ -7,12 +7,16 @@ pub mod env;
 pub mod eval;
 pub mod builtins;
 pub mod repl;
+pub mod storage;
+pub mod arbores;
 
 // Re-export commonly used types and functions
 pub use types::{Value, SchemeError, Result};
 pub use eval::Evaluator;
 pub use repl::Repl;
 pub use parser::Parser;
+pub use storage::{MemoryStorage, SExpressionStorage};
+pub use arbores::Arbores;
 
 /// Convenience function to evaluate a Scheme expression from a string
 pub fn eval(input: &str) -> Result<Value> {

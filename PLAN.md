@@ -15,22 +15,25 @@
 ## MVP 第二阶段：S-Expression 存储和查询
 
 ### 目标：实现核心知识库功能
-- [ ] S-Expression 数据结构设计
-  - [ ] 全局唯一 ID 分配
-  - [ ] 元数据存储（描述、类型、symbol names）
-  - [ ] 依赖关系管理
-- [ ] 基础存储接口
-  - [ ] `arb:create` - 创建 S-Expression
-  - [ ] `arb:get-metadata` - 获取元数据
-  - [ ] `arb:get-dependencies` - 查询依赖关系
-- [ ] 简单查询接口
-  - [ ] `arb:search-by-symbol` - 按 symbol name 查询
-  - [ ] `arb:semantic-search` - 基础语义搜索
+- [x] S-Expression 数据结构设计
+  - [x] 全局唯一 ID 分配
+  - [x] 元数据存储（描述、类型、symbol names）
+  - [x] 依赖关系管理
+- [x] 基础存储接口
+  - [x] `arb:create` - 创建 S-Expression
+  - [x] `arb:get-metadata` - 获取元数据
+  - [x] `arb:get-dependencies` - 查询依赖关系
+- [x] 简单查询接口
+  - [x] `arb:search-by-symbol` - 按 symbol name 查询
+  - [x] `arb:semantic-search` - 基础语义搜索
 
 ### 验收标准
-- 能够存储和检索带有元数据的 S-Expression
-- 支持基于 symbol name 的精确查询
-- 依赖关系正确追踪
+- ✅ 能够存储和检索带有元数据的 S-Expression
+- ✅ 支持基于 symbol name 的精确查询和前缀匹配
+- ✅ 依赖关系正确追踪
+
+### 当前状态
+✅ **已完成** - 核心知识库功能已实现，包含完整的存储、查询和依赖管理
 
 ## MVP 第三阶段：版本管理基础
 
