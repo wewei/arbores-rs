@@ -282,12 +282,34 @@ impl Lexer {
         Ok(tokens)
     }
 
+    /// 获取下一个 token 的位置（跳过空白字符后的位置）
+    fn next_token_position(&mut self) -> Position {
+        // 跳过空白字符和注释
+        loop {
+            match self.current_char {
+                None => break,
+                Some(ch) if ch.is_whitespace() => self.advance(),
+                Some(';') => {
+                    while let Some(ch) = self.current_char {
+                        self.advance();
+                        if ch == '\n' {
+                            break;
+                        }
+                    }
+                },
+                _ => break,
+            }
+        }
+        Position::new(self.line, self.column)
+    }
+
     /// 生成带位置信息的token列表
     pub fn tokenize_with_positions(&mut self) -> Result<Vec<LocatedToken>, String> {
         let mut tokens = Vec::new();
         
         loop {
-            let pos = Position::new(self.line, self.column);
+            // 先获取 token 的正确位置（跳过空白字符后）
+            let pos = self.next_token_position();
             let token = self.next_token()?;
             let is_eof = matches!(token, Token::EOF);
             tokens.push(LocatedToken::new(token, pos));

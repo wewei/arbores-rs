@@ -2,7 +2,7 @@ use std::fmt;
 use std::rc::Rc;
 
 /// 位置信息结构
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
@@ -17,6 +17,76 @@ impl Position {
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "line {}, column {}", self.line, self.column)
+    }
+}
+
+/// 带位置信息的值包装类型
+#[derive(Debug, Clone)]
+pub struct LocatedValue {
+    pub value: Value,
+    pub position: Option<Position>,
+    pub source_text: Option<String>, // 用于错误显示上下文
+}
+
+impl LocatedValue {
+    /// 创建新的带位置信息的值
+    pub fn new(value: Value, position: Option<Position>) -> Self {
+        Self { 
+            value, 
+            position, 
+            source_text: None 
+        }
+    }
+    
+    /// 创建不带位置信息的值（兼容性）
+    pub fn without_position(value: Value) -> Self {
+        Self { 
+            value, 
+            position: None, 
+            source_text: None 
+        }
+    }
+    
+    /// 添加源码文本用于错误显示
+    pub fn with_source(mut self, source: String) -> Self {
+        self.source_text = Some(source);
+        self
+    }
+    
+    /// 获取值的引用
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+    
+    /// 获取位置信息
+    pub fn position(&self) -> Option<&Position> {
+        self.position.as_ref()
+    }
+    
+    /// 解构为值和位置信息
+    pub fn into_parts(self) -> (Value, Option<Position>) {
+        (self.value, self.position)
+    }
+}
+
+impl fmt::Display for LocatedValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 显示时只显示值，隐藏位置信息
+        write!(f, "{}", self.value)
+    }
+}
+
+impl PartialEq for LocatedValue {
+    fn eq(&self, other: &Self) -> bool {
+        // 比较时只比较值，不比较位置信息
+        self.value == other.value
+    }
+}
+
+// 为了方便，提供从 Value 到 LocatedValue 的转换
+impl From<Value> for LocatedValue {
+    fn from(value: Value) -> Self {
+        LocatedValue::without_position(value)
     }
 }
 
