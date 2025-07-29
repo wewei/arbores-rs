@@ -1,4 +1,6 @@
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use crate::eval::Evaluator;
 use crate::parser::Parser;
 
@@ -27,11 +29,30 @@ impl Repl {
 
     /// 交互式模式
     fn run_interactive(&mut self) {
+        // 设置 Ctrl+C 处理器（仅在交互模式下）
+        let interrupted = Arc::new(AtomicBool::new(false));
+        let interrupted_clone = interrupted.clone();
+        
+        let _guard = ctrlc::set_handler(move || {
+            interrupted_clone.store(true, Ordering::SeqCst);
+        });
+        
+        if _guard.is_err() {
+            // 如果无法设置处理器，使用默认行为
+            eprintln!("Warning: Could not set Ctrl+C handler. Use 'exit' to quit.");
+        }
+        
         println!("Arbores Scheme Interpreter v0.1.0");
         println!("Type 'exit' or press Ctrl+C to quit.");
         println!();
 
         loop {
+            // 检查是否收到 Ctrl+C 信号
+            if interrupted.load(Ordering::SeqCst) {
+                println!("\nGoodbye!");
+                break;
+            }
+            
             // 显示提示符
             print!("arbores> ");
             io::stdout().flush().unwrap();
@@ -40,7 +61,7 @@ impl Repl {
             let mut input = String::new();
             match io::stdin().read_line(&mut input) {
                 Ok(0) => {
-                    // EOF reached
+                    // EOF reached (Ctrl+D on Unix, Ctrl+Z on Windows)
                     println!("\nGoodbye!");
                     break;
                 },
@@ -61,8 +82,14 @@ impl Repl {
                     self.eval_and_print(input);
                 },
                 Err(error) => {
-                    eprintln!("Error reading input: {error}");
-                    break;
+                    // 检查是否为中断信号 (Ctrl+C)
+                    if error.kind() == io::ErrorKind::Interrupted {
+                        println!("\nGoodbye!");
+                        break;
+                    } else {
+                        eprintln!("Error reading input: {error}");
+                        break;
+                    }
                 }
             }
         }
@@ -83,8 +110,14 @@ impl Repl {
                     input.push_str(&line);
                 },
                 Err(error) => {
-                    eprintln!("Error reading input: {error}");
-                    std::process::exit(1);
+                    // 检查是否为中断信号 (Ctrl+C)
+                    if error.kind() == io::ErrorKind::Interrupted {
+                        // 在批处理模式下，Ctrl+C 应该直接退出而不显示消息
+                        std::process::exit(0);
+                    } else {
+                        eprintln!("Error reading input: {error}");
+                        std::process::exit(1);
+                    }
                 }
             }
         }
