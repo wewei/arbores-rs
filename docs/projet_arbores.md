@@ -415,22 +415,23 @@ Arbores 知识库以 S-Expression 为原子节点，每个 S-Expression 有
 
 
 ### Special Form
-##### arbores-ref [T2]
+##### arb:ref [T2]
 **功能：** 给定 ID 引用对应的 S-Expression
-**输入：** 输入一组 ID，本地名对，和一个 target S-Expression
-**输出：** 用 Arbores 中的 ID 替换 target 中的本地名得到的 S-Expression
+**语法：** `(arb:ref ((本地名 ID) ...) body)`
+**输入：** 输入一组本地名到 ID 的绑定，和一个 body S-Expression
+**输出：** 用 Arbores 中的 ID 替换 body 中的本地名得到的 S-Expression
 **示例：**
 ```scheme
-(arbores-ref ((quicksort . 123) (helper . 456))
-             '(define (my-sort lst) (quicksort (helper lst))))
+(arb:ref ((quicksort 123) (helper 456))
+         (define (my-sort lst) (quicksort (helper lst))))
 ;; => '(define (my-sort lst) 
 ;;       (arb:get-code 123) (arb:get-code 456))
 ;; 实际执行时会替换为具体的代码
 ```
 
-##### transaction [T1]
+##### arb:transaction [T1]
 **功能：** 在事务中执行一组修改操作，要么全部成功，要么全部回滚
-**语法：** `(transaction body...)`
+**语法：** `(arb:transaction body...)`
 **行为：** 
   * 在事务开始时创建版本快照
   * 顺序执行 body 中的所有表达式
@@ -451,7 +452,7 @@ Arbores 知识库以 S-Expression 为原子节点，每个 S-Expression 有
     ```
 **示例：**
 ```scheme
-(transaction
+(arb:transaction
   (arb:create "(define (add x y) (+ x y))" '() "加法函数" "function" '("add"))
   (arb:create "(define (sub x y) (- x y))" '() "减法函数" "function" '("sub"))
   (arb:update 100 '(("dependencies" . (12350 12351)))))
@@ -459,7 +460,7 @@ Arbores 知识库以 S-Expression 为原子节点，每个 S-Expression 有
 ;;       ("new-version-id" . 12352))
 
 ;; 失败示例（假设第二个操作失败）
-(transaction
+(arb:transaction
   (arb:create "(define valid-func)" '() "有效函数" "function" '())
   (arb:create "invalid syntax(" '() "无效函数" "function" '())
   (arb:update 200 '(("code" . "new code"))))
