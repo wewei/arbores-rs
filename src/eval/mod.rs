@@ -1,504 +1,53 @@
-use std::rc::Rc;
-use std::cell::RefCell;
-use crate::types::{Value, SchemeError, Result};
-use crate::env::{Environment, EnvironmentManager, EnvironmentId};
-use crate::builtins;
+// 导出子模块
+pub mod builtins;
+pub mod special_forms;
+pub mod core;
 
-/// 求值器
+// 重新导出主要类型
+pub use core::CoreEvaluator;
+pub use builtins::register_builtins;
+
+use crate::types::{Value, Result};
+use crate::env::Environment;
+
+/// 求值器 - 重构后的主求值器
 pub struct Evaluator {
-    /// 环境管理器
-    env_manager: Rc<RefCell<EnvironmentManager>>,
-    /// 全局环境 ID
-    global_env_id: EnvironmentId,
+    /// 核心求值器
+    core: CoreEvaluator,
 }
 
 impl Evaluator {
     /// 创建新的求值器
     pub fn new() -> Self {
-        let env_manager = Rc::new(RefCell::new(EnvironmentManager::new()));
-        let global_env = Environment::new(Rc::clone(&env_manager));
-        let global_env_id = global_env.id();
+        let evaluator = Evaluator {
+            core: CoreEvaluator::new(),
+        };
         
         // 注册内置函数
-        Self::register_builtins(&global_env);
+        let global_env = evaluator.core.global_env();
+        register_builtins(&global_env);
         
-        Evaluator {
-            env_manager,
-            global_env_id,
-        }
+        evaluator
     }
 
     /// 获取全局环境
     pub fn global_env(&self) -> Environment {
-        Environment {
-            id: self.global_env_id,
-            manager: Rc::clone(&self.env_manager),
-        }
-    }
-
-    /// 注册内置函数
-    fn register_builtins(env: &Environment) {
-        // 算术运算
-        env.define("+".to_string(), Value::BuiltinFunction {
-            name: "+".to_string(),
-            func: builtins::add,
-            arity: None, // 可变参数
-        }).unwrap();
-        
-        env.define("-".to_string(), Value::BuiltinFunction {
-            name: "-".to_string(),
-            func: builtins::subtract,
-            arity: None,
-        }).unwrap();
-        
-        env.define("*".to_string(), Value::BuiltinFunction {
-            name: "*".to_string(),
-            func: builtins::multiply,
-            arity: None,
-        }).unwrap();
-        
-        env.define("/".to_string(), Value::BuiltinFunction {
-            name: "/".to_string(),
-            func: builtins::divide,
-            arity: None,
-        }).unwrap();
-
-        // 比较运算
-        env.define("=".to_string(), Value::BuiltinFunction {
-            name: "=".to_string(),
-            func: builtins::equal,
-            arity: Some(2),
-        }).unwrap();
-        
-        env.define("<".to_string(), Value::BuiltinFunction {
-            name: "<".to_string(),
-            func: builtins::less_than,
-            arity: Some(2),
-        }).unwrap();
-        
-        env.define(">".to_string(), Value::BuiltinFunction {
-            name: ">".to_string(),
-            func: builtins::greater_than,
-            arity: Some(2),
-        }).unwrap();
-        
-        env.define("<=".to_string(), Value::BuiltinFunction {
-            name: "<=".to_string(),
-            func: builtins::less_equal,
-            arity: Some(2),
-        }).unwrap();
-        
-        env.define(">=".to_string(), Value::BuiltinFunction {
-            name: ">=".to_string(),
-            func: builtins::greater_equal,
-            arity: Some(2),
-        }).unwrap();
-
-        // 数学函数
-        env.define("abs".to_string(), Value::BuiltinFunction {
-            name: "abs".to_string(),
-            func: builtins::abs_func,
-            arity: Some(1),
-        }).unwrap();
-        
-        env.define("max".to_string(), Value::BuiltinFunction {
-            name: "max".to_string(),
-            func: builtins::max_func,
-            arity: None,
-        }).unwrap();
-        
-        env.define("min".to_string(), Value::BuiltinFunction {
-            name: "min".to_string(),
-            func: builtins::min_func,
-            arity: None,
-        }).unwrap();
-
-        // 列表操作
-        env.define("cons".to_string(), Value::BuiltinFunction {
-            name: "cons".to_string(),
-            func: builtins::cons,
-            arity: Some(2),
-        }).unwrap();
-        
-        env.define("car".to_string(), Value::BuiltinFunction {
-            name: "car".to_string(),
-            func: builtins::car,
-            arity: Some(1),
-        }).unwrap();
-        
-        env.define("cdr".to_string(), Value::BuiltinFunction {
-            name: "cdr".to_string(),
-            func: builtins::cdr,
-            arity: Some(1),
-        }).unwrap();
-        
-        env.define("list".to_string(), Value::BuiltinFunction {
-            name: "list".to_string(),
-            func: builtins::list,
-            arity: None,
-        }).unwrap();
-
-        // 类型谓词
-        env.define("null?".to_string(), Value::BuiltinFunction {
-            name: "null?".to_string(),
-            func: builtins::is_null,
-            arity: Some(1),
-        }).unwrap();
-        
-        env.define("pair?".to_string(), Value::BuiltinFunction {
-            name: "pair?".to_string(),
-            func: builtins::is_pair,
-            arity: Some(1),
-        }).unwrap();
-        
-        env.define("number?".to_string(), Value::BuiltinFunction {
-            name: "number?".to_string(),
-            func: builtins::is_number,
-            arity: Some(1),
-        }).unwrap();
-        
-        env.define("symbol?".to_string(), Value::BuiltinFunction {
-            name: "symbol?".to_string(),
-            func: builtins::is_symbol,
-            arity: Some(1),
-        }).unwrap();
-        
-        env.define("string?".to_string(), Value::BuiltinFunction {
-            name: "string?".to_string(),
-            func: builtins::is_string,
-            arity: Some(1),
-        }).unwrap();
+        self.core.global_env()
     }
 
     /// 求值表达式
     pub fn eval(&self, expr: &Value, env: &Environment) -> Result<Value> {
-        match expr {
-            // 自求值表达式
-            Value::Integer(_) | Value::Float(_) | Value::String(_) | Value::Bool(_) => {
-                Ok(expr.clone())
-            },
-            
-            // 空列表
-            Value::Nil => Ok(Value::Nil),
-            
-            // 符号（变量查找）
-            Value::Symbol(name) => env.lookup(name),
-            
-            // 列表（函数调用或特殊形式）
-            Value::Cons(_, _) => {
-                if let Some(list) = expr.to_vec() {
-                    if list.is_empty() {
-                        return Ok(Value::Nil);
-                    }
-                    
-                    // 检查是否为特殊形式
-                    if let Value::Symbol(op) = &list[0] {
-                        match op.as_str() {
-                            "quote" => self.eval_quote(&list[1..], env),
-                            "if" => self.eval_if(&list[1..], env),
-                            "define" => self.eval_define(&list[1..], env),
-                            "set!" => self.eval_set(&list[1..], env),
-                            "lambda" => self.eval_lambda(&list[1..], env),
-                            "let" => self.eval_let(&list[1..], env),
-                            "begin" => self.eval_begin(&list[1..], env),
-                            "and" => self.eval_and(&list[1..], env),
-                            "or" => self.eval_or(&list[1..], env),
-                            "cond" => self.eval_cond(&list[1..], env),
-                            _ => self.eval_application(&list, env),
-                        }
-                    } else {
-                        self.eval_application(&list, env)
-                    }
-                } else {
-                    Err(SchemeError::RuntimeError("Invalid list structure".to_string(), None))
-                }
-            },
-            
-            _ => Err(SchemeError::RuntimeError(format!("Cannot evaluate {expr}"), None)),
-        }
-    }
-
-    /// 求值 quote 特殊形式
-    fn eval_quote(&self, args: &[Value], _env: &Environment) -> Result<Value> {
-        if args.len() != 1 {
-            return Err(SchemeError::ArityError("quote requires exactly 1 argument".to_string(), None));
-        }
-        Ok(args[0].clone())
-    }
-
-    /// 求值 if 特殊形式
-    fn eval_if(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.len() < 2 || args.len() > 3 {
-            return Err(SchemeError::ArityError("if requires 2 or 3 arguments".to_string(), None));
-        }
-
-        let condition = self.eval(&args[0], env)?;
-        
-        if condition.is_truthy() {
-            self.eval(&args[1], env)
-        } else if args.len() == 3 {
-            self.eval(&args[2], env)
-        } else {
-            Ok(Value::Nil)
-        }
-    }
-
-    /// 求值 define 特殊形式
-    fn eval_define(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.len() != 2 {
-            return Err(SchemeError::ArityError("define requires exactly 2 arguments".to_string(), None));
-        }
-
-        match &args[0] {
-            Value::Symbol(name) => {
-                let value = self.eval(&args[1], env)?;
-                env.define(name.clone(), value)?;
-                Ok(Value::Nil)
-            },
-            _ => Err(SchemeError::TypeError("define expects a symbol".to_string(), None)),
-        }
-    }
-
-    /// 求值 set! 特殊形式
-    fn eval_set(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.len() != 2 {
-            return Err(SchemeError::ArityError("set! requires exactly 2 arguments".to_string(), None));
-        }
-
-        match &args[0] {
-            Value::Symbol(name) => {
-                let value = self.eval(&args[1], env)?;
-                env.set(name, value)?;
-                Ok(Value::Nil)
-            },
-            _ => Err(SchemeError::TypeError("set! expects a symbol".to_string(), None)),
-        }
-    }
-
-    /// 求值 lambda 特殊形式
-    fn eval_lambda(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.len() != 2 {
-            return Err(SchemeError::ArityError("lambda requires exactly 2 arguments".to_string(), None));
-        }
-
-        // 解析参数列表
-        let params = match &args[0] {
-            Value::Nil => Vec::new(),
-            expr => {
-                if let Some(param_list) = expr.to_vec() {
-                    let mut params = Vec::new();
-                    for param in param_list {
-                        if let Value::Symbol(name) = param {
-                            params.push(name);
-                        } else {
-                            return Err(SchemeError::TypeError("lambda parameters must be symbols".to_string(), None));
-                        }
-                    }
-                    params
-                } else {
-                    return Err(SchemeError::TypeError("lambda parameters must be a list".to_string(), None));
-                }
-            }
-        };
-
-        Ok(Value::Lambda {
-            params,
-            body: Rc::new(args[1].clone()),
-            env_id: env.id(),
-        })
-    }
-
-    /// 求值 let 特殊形式
-    fn eval_let(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.len() != 2 {
-            return Err(SchemeError::ArityError("let requires exactly 2 arguments".to_string(), None));
-        }
-
-        // 解析绑定列表
-        let bindings = match &args[0] {
-            Value::Nil => Vec::new(),
-            expr => {
-                if let Some(binding_list) = expr.to_vec() {
-                    let mut bindings = Vec::new();
-                    for binding in binding_list {
-                        if let Some(pair) = binding.to_vec() {
-                            if pair.len() == 2 {
-                                if let Value::Symbol(name) = &pair[0] {
-                                    let value = self.eval(&pair[1], env)?;
-                                    bindings.push((name.clone(), value));
-                                } else {
-                                    return Err(SchemeError::TypeError("let binding name must be a symbol".to_string(), None));
-                                }
-                            } else {
-                                return Err(SchemeError::TypeError("let binding must have exactly 2 elements".to_string(), None));
-                            }
-                        } else {
-                            return Err(SchemeError::TypeError("let binding must be a list".to_string(), None));
-                        }
-                    }
-                    bindings
-                } else {
-                    return Err(SchemeError::TypeError("let bindings must be a list".to_string(), None));
-                }
-            }
-        };
-
-        // 创建新环境
-        let names: Vec<String> = bindings.iter().map(|(name, _)| name.clone()).collect();
-        let values: Vec<Value> = bindings.into_iter().map(|(_, value)| value).collect();
-        let new_env = env.extend(names, values)?;
-
-        // 在新环境中求值 body
-        self.eval(&args[1], &new_env)
-    }
-
-    /// 求值 begin 特殊形式
-    fn eval_begin(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.is_empty() {
-            return Ok(Value::Nil);
-        }
-
-        let mut result = Value::Nil;
-        for expr in args {
-            result = self.eval(expr, env)?;
-        }
-        Ok(result)
-    }
-
-    /// 求值 and 特殊形式
-    fn eval_and(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.is_empty() {
-            return Ok(Value::Bool(true));
-        }
-
-        for arg in args {
-            let result = self.eval(arg, env)?;
-            if !result.is_truthy() {
-                return Ok(result);
-            }
-        }
-        
-        // 如果所有表达式都为真，返回最后一个表达式的值
-        self.eval(&args[args.len() - 1], env)
-    }
-
-    /// 求值 or 特殊形式
-    fn eval_or(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        if args.is_empty() {
-            return Ok(Value::Bool(false));
-        }
-
-        for arg in args {
-            let result = self.eval(arg, env)?;
-            if result.is_truthy() {
-                return Ok(result);
-            }
-        }
-        
-        // 如果所有表达式都为假，返回最后一个表达式的值
-        self.eval(&args[args.len() - 1], env)
-    }
-
-    /// 求值 cond 特殊形式
-    fn eval_cond(&self, args: &[Value], env: &Environment) -> Result<Value> {
-        for clause in args {
-            if let Some(clause_list) = clause.to_vec() {
-                if clause_list.len() < 1 {
-                    return Err(SchemeError::SyntaxError("cond clause must have at least a condition".to_string(), None));
-                }
-                
-                // 检查是否为 else 子句
-                if let Value::Symbol(s) = &clause_list[0] {
-                    if s == "else" {
-                        if clause_list.len() == 1 {
-                            return Ok(Value::Nil);
-                        } else if clause_list.len() == 2 {
-                            return self.eval(&clause_list[1], env);
-                        } else {
-                            // 多个表达式，当作 begin 处理
-                            return self.eval_begin(&clause_list[1..], env);
-                        }
-                    }
-                }
-                
-                // 求值条件
-                let condition = self.eval(&clause_list[0], env)?;
-                
-                if condition.is_truthy() {
-                    if clause_list.len() == 1 {
-                        return Ok(condition);
-                    } else if clause_list.len() == 2 {
-                        return self.eval(&clause_list[1], env);
-                    } else {
-                        // 多个表达式，当作 begin 处理
-                        return self.eval_begin(&clause_list[1..], env);
-                    }
-                }
-            } else {
-                return Err(SchemeError::SyntaxError("cond clause must be a list".to_string(), None));
-            }
-        }
-        
-        // 没有匹配的子句
-        Ok(Value::Nil)
-    }
-
-    /// 求值函数应用
-    fn eval_application(&self, exprs: &[Value], env: &Environment) -> Result<Value> {
-        if exprs.is_empty() {
-            return Ok(Value::Nil);
-        }
-
-        // 求值函数
-        let func = self.eval(&exprs[0], env)?;
-        
-        // 求值参数
-        let mut args = Vec::new();
-        for arg_expr in &exprs[1..] {
-            args.push(self.eval(arg_expr, env)?);
-        }
-
-        // 应用函数
-        match func {
-            Value::BuiltinFunction { func, arity, .. } => {
-                // 检查参数个数
-                if let Some(expected_arity) = arity {
-                    if args.len() != expected_arity {
-                        return Err(SchemeError::ArityError(
-                            format!("Expected {} arguments, got {}", expected_arity, args.len()), None
-                        ));
-                    }
-                }
-                func(&args)
-            },
-            
-            Value::Lambda { params, body, env_id } => {
-                if args.len() != params.len() {
-                    return Err(SchemeError::ArityError(
-                        format!("Expected {} arguments, got {}", params.len(), args.len()), None
-                    ));
-                }
-                
-                // 从环境ID创建新环境绑定参数
-                let closure_env = Environment::from_id(env_id, self.env_manager.clone());
-                let new_env = closure_env.extend(params, args)?;
-                self.eval(&body, &new_env)
-            },
-            
-            _ => Err(SchemeError::TypeError(format!("Cannot apply non-function: {func}"), None)),
-        }
+        self.core.eval(expr, env)
     }
 
     /// 便利方法：求值字符串
     pub fn eval_string(&self, input: &str) -> Result<Value> {
-        let expr = crate::parser::Parser::parse(input)?;
-        let global_env = Environment::from_id(self.global_env_id, self.env_manager.clone());
-        self.eval(&expr, &global_env)
+        self.core.eval_string(input)
     }
 
     /// 获取全局环境
     pub fn get_global_env(&self) -> Environment {
-        Environment::from_id(self.global_env_id, self.env_manager.clone())
+        self.core.get_global_env()
     }
 }
 
