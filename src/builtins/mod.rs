@@ -223,6 +223,163 @@ pub fn less_than(args: &[Value]) -> Result<Value> {
     Ok(Value::Bool(result))
 }
 
+pub fn greater_than(args: &[Value]) -> Result<Value> {
+    if args.len() != 2 {
+        return Err(SchemeError::ArityError("> requires exactly 2 arguments".to_string()));
+    }
+
+    let result = match (&args[0], &args[1]) {
+        (Value::Integer(a), Value::Integer(b)) => a > b,
+        (Value::Float(a), Value::Float(b)) => a > b,
+        (Value::Integer(a), Value::Float(b)) => (*a as f64) > *b,
+        (Value::Float(a), Value::Integer(b)) => *a > (*b as f64),
+        _ => return Err(SchemeError::TypeError(
+            "> expects numbers".to_string()
+        )),
+    };
+
+    Ok(Value::Bool(result))
+}
+
+pub fn less_equal(args: &[Value]) -> Result<Value> {
+    if args.len() != 2 {
+        return Err(SchemeError::ArityError("<= requires exactly 2 arguments".to_string()));
+    }
+
+    let result = match (&args[0], &args[1]) {
+        (Value::Integer(a), Value::Integer(b)) => a <= b,
+        (Value::Float(a), Value::Float(b)) => a <= b,
+        (Value::Integer(a), Value::Float(b)) => (*a as f64) <= *b,
+        (Value::Float(a), Value::Integer(b)) => *a <= (*b as f64),
+        _ => return Err(SchemeError::TypeError(
+            "<= expects numbers".to_string()
+        )),
+    };
+
+    Ok(Value::Bool(result))
+}
+
+pub fn greater_equal(args: &[Value]) -> Result<Value> {
+    if args.len() != 2 {
+        return Err(SchemeError::ArityError(">= requires exactly 2 arguments".to_string()));
+    }
+
+    let result = match (&args[0], &args[1]) {
+        (Value::Integer(a), Value::Integer(b)) => a >= b,
+        (Value::Float(a), Value::Float(b)) => a >= b,
+        (Value::Integer(a), Value::Float(b)) => (*a as f64) >= *b,
+        (Value::Float(a), Value::Integer(b)) => *a >= (*b as f64),
+        _ => return Err(SchemeError::TypeError(
+            ">= expects numbers".to_string()
+        )),
+    };
+
+    Ok(Value::Bool(result))
+}
+
+/// 数学函数
+pub fn abs_func(args: &[Value]) -> Result<Value> {
+    if args.len() != 1 {
+        return Err(SchemeError::ArityError("abs requires exactly 1 argument".to_string()));
+    }
+
+    match &args[0] {
+        Value::Integer(n) => Ok(Value::Integer(n.abs())),
+        Value::Float(f) => Ok(Value::Float(f.abs())),
+        _ => Err(SchemeError::TypeError(
+            format!("abs expects a number, got {}", args[0])
+        )),
+    }
+}
+
+pub fn max_func(args: &[Value]) -> Result<Value> {
+    if args.is_empty() {
+        return Err(SchemeError::ArityError("max requires at least 1 argument".to_string()));
+    }
+
+    let mut max_val = &args[0];
+    let mut is_float = false;
+
+    // 检查是否有浮点数
+    for arg in args {
+        match arg {
+            Value::Float(_) => is_float = true,
+            Value::Integer(_) => {},
+            _ => return Err(SchemeError::TypeError(
+                format!("max expects numbers, got {}", arg)
+            )),
+        }
+    }
+
+    for arg in &args[1..] {
+        let greater = match (max_val, arg) {
+            (Value::Integer(a), Value::Integer(b)) => b > a,
+            (Value::Float(a), Value::Float(b)) => b > a,
+            (Value::Integer(a), Value::Float(b)) => b > &(*a as f64),
+            (Value::Float(a), Value::Integer(b)) => (*b as f64) > *a,
+            _ => return Err(SchemeError::TypeError("max expects numbers".to_string())),
+        };
+        
+        if greater {
+            max_val = arg;
+        }
+    }
+
+    if is_float {
+        match max_val {
+            Value::Integer(n) => Ok(Value::Float(*n as f64)),
+            Value::Float(f) => Ok(Value::Float(*f)),
+            _ => unreachable!(),
+        }
+    } else {
+        Ok(max_val.clone())
+    }
+}
+
+pub fn min_func(args: &[Value]) -> Result<Value> {
+    if args.is_empty() {
+        return Err(SchemeError::ArityError("min requires at least 1 argument".to_string()));
+    }
+
+    let mut min_val = &args[0];
+    let mut is_float = false;
+
+    // 检查是否有浮点数
+    for arg in args {
+        match arg {
+            Value::Float(_) => is_float = true,
+            Value::Integer(_) => {},
+            _ => return Err(SchemeError::TypeError(
+                format!("min expects numbers, got {}", arg)
+            )),
+        }
+    }
+
+    for arg in &args[1..] {
+        let less = match (min_val, arg) {
+            (Value::Integer(a), Value::Integer(b)) => b < a,
+            (Value::Float(a), Value::Float(b)) => b < a,
+            (Value::Integer(a), Value::Float(b)) => b < &(*a as f64),
+            (Value::Float(a), Value::Integer(b)) => (*b as f64) < *a,
+            _ => return Err(SchemeError::TypeError("min expects numbers".to_string())),
+        };
+        
+        if less {
+            min_val = arg;
+        }
+    }
+
+    if is_float {
+        match min_val {
+            Value::Integer(n) => Ok(Value::Float(*n as f64)),
+            Value::Float(f) => Ok(Value::Float(*f)),
+            _ => unreachable!(),
+        }
+    } else {
+        Ok(min_val.clone())
+    }
+}
+
 /// 列表操作函数
 pub fn cons(args: &[Value]) -> Result<Value> {
     if args.len() != 2 {
@@ -337,5 +494,39 @@ mod tests {
         
         assert!(result.is_list());
         assert_eq!(result.length().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_comparison_functions() {
+        // 测试 >
+        assert_eq!(greater_than(&[Value::Integer(5), Value::Integer(3)]).unwrap(), Value::Bool(true));
+        assert_eq!(greater_than(&[Value::Integer(3), Value::Integer(5)]).unwrap(), Value::Bool(false));
+        assert_eq!(greater_than(&[Value::Float(5.5), Value::Integer(5)]).unwrap(), Value::Bool(true));
+        
+        // 测试 <=
+        assert_eq!(less_equal(&[Value::Integer(3), Value::Integer(5)]).unwrap(), Value::Bool(true));
+        assert_eq!(less_equal(&[Value::Integer(5), Value::Integer(5)]).unwrap(), Value::Bool(true));
+        assert_eq!(less_equal(&[Value::Integer(7), Value::Integer(5)]).unwrap(), Value::Bool(false));
+        
+        // 测试 >=
+        assert_eq!(greater_equal(&[Value::Integer(5), Value::Integer(3)]).unwrap(), Value::Bool(true));
+        assert_eq!(greater_equal(&[Value::Integer(5), Value::Integer(5)]).unwrap(), Value::Bool(true));
+        assert_eq!(greater_equal(&[Value::Integer(3), Value::Integer(5)]).unwrap(), Value::Bool(false));
+    }
+
+    #[test]
+    fn test_math_builtin_functions() {
+        // 测试 abs
+        assert_eq!(abs_func(&[Value::Integer(-5)]).unwrap(), Value::Integer(5));
+        assert_eq!(abs_func(&[Value::Integer(3)]).unwrap(), Value::Integer(3));
+        assert_eq!(abs_func(&[Value::Float(-3.14)]).unwrap(), Value::Float(3.14));
+        
+        // 测试 max
+        assert_eq!(max_func(&[Value::Integer(1), Value::Integer(2), Value::Integer(3)]).unwrap(), Value::Integer(3));
+        assert_eq!(max_func(&[Value::Float(1.5), Value::Integer(2)]).unwrap(), Value::Float(2.0));
+        
+        // 测试 min
+        assert_eq!(min_func(&[Value::Integer(3), Value::Integer(1), Value::Integer(2)]).unwrap(), Value::Integer(1));
+        assert_eq!(min_func(&[Value::Float(1.5), Value::Integer(2)]).unwrap(), Value::Float(1.5));
     }
 }

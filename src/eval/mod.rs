@@ -75,6 +75,43 @@ impl Evaluator {
             func: builtins::less_than,
             arity: Some(2),
         }).unwrap();
+        
+        env.define(">".to_string(), Value::BuiltinFunction {
+            name: ">".to_string(),
+            func: builtins::greater_than,
+            arity: Some(2),
+        }).unwrap();
+        
+        env.define("<=".to_string(), Value::BuiltinFunction {
+            name: "<=".to_string(),
+            func: builtins::less_equal,
+            arity: Some(2),
+        }).unwrap();
+        
+        env.define(">=".to_string(), Value::BuiltinFunction {
+            name: ">=".to_string(),
+            func: builtins::greater_equal,
+            arity: Some(2),
+        }).unwrap();
+
+        // 数学函数
+        env.define("abs".to_string(), Value::BuiltinFunction {
+            name: "abs".to_string(),
+            func: builtins::abs_func,
+            arity: Some(1),
+        }).unwrap();
+        
+        env.define("max".to_string(), Value::BuiltinFunction {
+            name: "max".to_string(),
+            func: builtins::max_func,
+            arity: None,
+        }).unwrap();
+        
+        env.define("min".to_string(), Value::BuiltinFunction {
+            name: "min".to_string(),
+            func: builtins::min_func,
+            arity: None,
+        }).unwrap();
 
         // 列表操作
         env.define("cons".to_string(), Value::BuiltinFunction {
@@ -164,6 +201,9 @@ impl Evaluator {
                             "lambda" => self.eval_lambda(&list[1..], env),
                             "let" => self.eval_let(&list[1..], env),
                             "begin" => self.eval_begin(&list[1..], env),
+                            "and" => self.eval_and(&list[1..], env),
+                            "or" => self.eval_or(&list[1..], env),
+                            "cond" => self.eval_cond(&list[1..], env),
                             _ => self.eval_application(&list, env),
                         }
                     } else {
@@ -337,6 +377,88 @@ impl Evaluator {
         Ok(result)
     }
 
+    /// 求值 and 特殊形式
+    fn eval_and(&self, args: &[Value], env: &Environment) -> Result<Value> {
+        if args.is_empty() {
+            return Ok(Value::Bool(true));
+        }
+
+        for arg in args {
+            let result = self.eval(arg, env)?;
+            if !result.is_truthy() {
+                return Ok(result);
+            }
+        }
+        
+        // 如果所有表达式都为真，返回最后一个表达式的值
+        self.eval(&args[args.len() - 1], env)
+    }
+
+    /// 求值 or 特殊形式
+    fn eval_or(&self, args: &[Value], env: &Environment) -> Result<Value> {
+        if args.is_empty() {
+            return Ok(Value::Bool(false));
+        }
+
+        for arg in args {
+            let result = self.eval(arg, env)?;
+            if result.is_truthy() {
+                return Ok(result);
+            }
+        }
+        
+        // 如果所有表达式都为假，返回最后一个表达式的值
+        self.eval(&args[args.len() - 1], env)
+    }
+
+    /// 求值 cond 特殊形式
+    fn eval_cond(&self, args: &[Value], env: &Environment) -> Result<Value> {
+        for clause in args {
+            if let Some(clause_list) = clause.to_vec() {
+                if clause_list.len() < 1 {
+                    return Err(SchemeError::SyntaxError(
+                        "cond clause must have at least a condition".to_string()
+                    ));
+                }
+                
+                // 检查是否为 else 子句
+                if let Value::Symbol(s) = &clause_list[0] {
+                    if s == "else" {
+                        if clause_list.len() == 1 {
+                            return Ok(Value::Nil);
+                        } else if clause_list.len() == 2 {
+                            return self.eval(&clause_list[1], env);
+                        } else {
+                            // 多个表达式，当作 begin 处理
+                            return self.eval_begin(&clause_list[1..], env);
+                        }
+                    }
+                }
+                
+                // 求值条件
+                let condition = self.eval(&clause_list[0], env)?;
+                
+                if condition.is_truthy() {
+                    if clause_list.len() == 1 {
+                        return Ok(condition);
+                    } else if clause_list.len() == 2 {
+                        return self.eval(&clause_list[1], env);
+                    } else {
+                        // 多个表达式，当作 begin 处理
+                        return self.eval_begin(&clause_list[1..], env);
+                    }
+                }
+            } else {
+                return Err(SchemeError::SyntaxError(
+                    "cond clause must be a list".to_string()
+                ));
+            }
+        }
+        
+        // 没有匹配的子句
+        Ok(Value::Nil)
+    }
+
     /// 求值函数应用
     fn eval_application(&self, exprs: &[Value], env: &Environment) -> Result<Value> {
         if exprs.is_empty() {
@@ -490,5 +612,92 @@ mod tests {
         evaluator.eval_string("(define make-adder (lambda (n) (lambda (x) (+ x n))))").unwrap();
         evaluator.eval_string("(define add5 (make-adder 5))").unwrap();
         assert_eq!(evaluator.eval_string("(add5 10)").unwrap(), Value::Integer(15));
+    }
+
+    #[test]
+    fn test_comparison_operators() {
+        let evaluator = Evaluator::new();
+        
+        // 测试 >
+        assert_eq!(evaluator.eval_string("(> 5 3)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(> 3 5)").unwrap(), Value::Bool(false));
+        
+        // 测试 <=
+        assert_eq!(evaluator.eval_string("(<= 3 5)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(<= 5 5)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(<= 7 5)").unwrap(), Value::Bool(false));
+        
+        // 测试 >=
+        assert_eq!(evaluator.eval_string("(>= 5 3)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(>= 5 5)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(>= 3 5)").unwrap(), Value::Bool(false));
+    }
+
+    #[test]
+    fn test_math_functions() {
+        let evaluator = Evaluator::new();
+        
+        // 测试 abs
+        assert_eq!(evaluator.eval_string("(abs -5)").unwrap(), Value::Integer(5));
+        assert_eq!(evaluator.eval_string("(abs 3)").unwrap(), Value::Integer(3));
+        assert_eq!(evaluator.eval_string("(abs -3.14)").unwrap(), Value::Float(3.14));
+        
+        // 测试 max
+        assert_eq!(evaluator.eval_string("(max 1 2 3)").unwrap(), Value::Integer(3));
+        assert_eq!(evaluator.eval_string("(max 5 2 8 1)").unwrap(), Value::Integer(8));
+        assert_eq!(evaluator.eval_string("(max 1.5 2 3.7)").unwrap(), Value::Float(3.7));
+        
+        // 测试 min
+        assert_eq!(evaluator.eval_string("(min 3 1 2)").unwrap(), Value::Integer(1));
+        assert_eq!(evaluator.eval_string("(min 5 2 8 1)").unwrap(), Value::Integer(1));
+        assert_eq!(evaluator.eval_string("(min 1.5 2 0.3)").unwrap(), Value::Float(0.3));
+    }
+
+    #[test]
+    fn test_logical_operators() {
+        let evaluator = Evaluator::new();
+        
+        // 测试 and
+        assert_eq!(evaluator.eval_string("(and)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(and #t)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(and #f)").unwrap(), Value::Bool(false));
+        assert_eq!(evaluator.eval_string("(and #t #t)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(and #t #f)").unwrap(), Value::Bool(false));
+        assert_eq!(evaluator.eval_string("(and 1 2 3)").unwrap(), Value::Integer(3));
+        
+        // 测试 or
+        assert_eq!(evaluator.eval_string("(or)").unwrap(), Value::Bool(false));
+        assert_eq!(evaluator.eval_string("(or #f)").unwrap(), Value::Bool(false));
+        assert_eq!(evaluator.eval_string("(or #t)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(or #f #t)").unwrap(), Value::Bool(true));
+        assert_eq!(evaluator.eval_string("(or #f #f)").unwrap(), Value::Bool(false));
+        assert_eq!(evaluator.eval_string("(or #f 42)").unwrap(), Value::Integer(42));
+    }
+
+    #[test]
+    fn test_cond() {
+        let evaluator = Evaluator::new();
+        
+        // 基本 cond 测试
+        assert_eq!(
+            evaluator.eval_string("(cond (#t 1))").unwrap(), 
+            Value::Integer(1)
+        );
+        assert_eq!(
+            evaluator.eval_string("(cond (#f 1) (#t 2))").unwrap(), 
+            Value::Integer(2)
+        );
+        
+        // else 子句
+        assert_eq!(
+            evaluator.eval_string("(cond (#f 1) (else 42))").unwrap(), 
+            Value::Integer(42)
+        );
+        
+        // 没有匹配的子句
+        assert_eq!(
+            evaluator.eval_string("(cond (#f 1) (#f 2))").unwrap(), 
+            Value::Nil
+        );
     }
 }

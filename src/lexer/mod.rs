@@ -1,5 +1,37 @@
 use std::fmt;
 
+/// 位置信息结构
+#[derive(Debug, Clone, PartialEq)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl Position {
+    pub fn new(line: usize, column: usize) -> Self {
+        Position { line, column }
+    }
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.line, self.column)
+    }
+}
+
+/// 带位置信息的 Token
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocatedToken {
+    pub token: Token,
+    pub position: Position,
+}
+
+impl LocatedToken {
+    pub fn new(token: Token, position: Position) -> Self {
+        LocatedToken { token, position }
+    }
+}
+
 /// Token 类型定义
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -48,6 +80,8 @@ pub struct Lexer {
     input: Vec<char>,
     position: usize,
     current_char: Option<char>,
+    line: usize,
+    column: usize,
 }
 
 impl Lexer {
@@ -60,11 +94,28 @@ impl Lexer {
             input: chars,
             position: 0,
             current_char,
+            line: 1,
+            column: 1,
         }
+    }
+
+    /// 获取当前位置
+    #[allow(dead_code)]
+    fn current_position(&self) -> Position {
+        Position::new(self.line, self.column)
     }
 
     /// 移动到下一个字符
     fn advance(&mut self) {
+        if let Some(ch) = self.current_char {
+            if ch == '\n' {
+                self.line += 1;
+                self.column = 1;
+            } else {
+                self.column += 1;
+            }
+        }
+        
         self.position += 1;
         self.current_char = self.input.get(self.position).copied();
     }
@@ -96,6 +147,12 @@ impl Lexer {
     fn read_number(&mut self) -> Token {
         let mut number_str = String::new();
         let mut is_float = false;
+
+        // 处理负号
+        if self.current_char == Some('-') {
+            number_str.push('-');
+            self.advance();
+        }
 
         while let Some(ch) = self.current_char {
             if ch.is_ascii_digit() {
@@ -206,7 +263,16 @@ impl Lexer {
                 },
                 Some('"') => return self.read_string(),
                 Some(ch) if ch.is_ascii_digit() => return Ok(self.read_number()),
-                Some(ch) if ch.is_alphabetic() || "-+*/<>=!?_#".contains(ch) => {
+                Some('-') => {
+                    // 检查 '-' 后面是否是数字
+                    if let Some(next_char) = self.input.get(self.position + 1) {
+                        if next_char.is_ascii_digit() {
+                            return Ok(self.read_number());
+                        }
+                    }
+                    return Ok(self.read_symbol());
+                },
+                Some(ch) if ch.is_alphabetic() || "+*/<>=!?_#".contains(ch) => {
                     return Ok(self.read_symbol());
                 },
                 Some(ch) => {
@@ -286,6 +352,24 @@ mod tests {
             Token::Symbol("a".to_string()),
             Token::Symbol("b".to_string()),
             Token::Symbol("c".to_string()),
+            Token::RightParen,
+            Token::EOF,
+        ]);
+    }
+
+    #[test]
+    fn test_lexer_negative_numbers() {
+        let mut lexer = Lexer::new("-5 -3.14 - (- 1 2)");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens, vec![
+            Token::Integer(-5),
+            Token::Float(-3.14),
+            Token::Symbol("-".to_string()),
+            Token::LeftParen,
+            Token::Symbol("-".to_string()),
+            Token::Integer(1),
+            Token::Integer(2),
             Token::RightParen,
             Token::EOF,
         ]);
