@@ -56,8 +56,12 @@ fn execute_file(file_path: &str) {
     match std::fs::read_to_string(file_path) {
         Ok(content) => {
             let mut repl = Repl::new();
-            match repl.eval(&content) {
-                Ok(result) => println!("{}", result),
+            match repl.eval_multiple(&content) {
+                Ok(results) => {
+                    for result in results {
+                        println!("{}", result);
+                    }
+                },
                 Err(e) => {
                     eprintln!("Error executing file: {}", e);
                     std::process::exit(1);
