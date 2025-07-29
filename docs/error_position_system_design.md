@@ -350,10 +350,28 @@ Error: Undefined variable 'foo' at line 3, column 8
 
 ### 🔄 **下一步计划**
 
-#### 阶段三：Evaluator 位置传播 (待实施)
-- 修改 `eval` 方法支持 LocatedValue
-- 实现执行上下文和调用栈
-- 确保运行时错误包含位置信息
+#### 阶段三：Evaluator 位置传播 (待实施) - **设计调整**
+基于重构后的模块化架构，第三阶段的实施策略需要调整：
+
+**新的实施策略：**
+1. **创建 ContextualEvaluator 模块** (`src/eval/contextual.rs`)
+   - 基于 `CoreEvaluator` 扩展，支持位置信息
+   - 实现执行上下文和调用栈管理
+   - 保持与现有架构的兼容性
+
+2. **扩展 SpecialFormsEvaluator**
+   - 添加带位置信息的特殊形式求值方法
+   - 保持现有 API 不变，提供新的位置感知版本
+
+3. **位置感知的内置函数**
+   - 在 `builtins.rs` 中添加位置感知版本
+   - 保持向后兼容性
+
+**优势：**
+- ✅ 不破坏现有架构
+- ✅ 可以逐步迁移
+- ✅ 保持代码清晰性
+- ✅ 便于测试和验证
 
 #### 阶段四：内置函数增强 (待实施)
 - 更新内置函数接口支持位置信息
@@ -379,9 +397,79 @@ Error: Undefined variable 'foo' at line 3, column 8
 
 ---
 
-## 9. 设计文档状态
+## 9. 第三阶段详细技术设计
+
+### 9.1 架构调整分析
+
+**重构后的优势：**
+- **模块化清晰**: `core.rs`、`special_forms.rs`、`builtins.rs` 职责明确
+- **接口稳定**: 现有 API 保持不变，便于渐进式迁移
+- **扩展性好**: 可以基于现有模块创建增强版本
+
+### 9.2 新的实施计划
+
+#### 9.2.1 创建 ContextualEvaluator
+```rust
+// src/eval/contextual.rs
+pub struct ContextualEvaluator {
+    core: CoreEvaluator,
+    context: EvaluationContext,
+}
+
+impl ContextualEvaluator {
+    pub fn eval_with_context(
+        &self,
+        expr: &LocatedValue,
+        env: &Environment,
+        context: &mut EvaluationContext,
+    ) -> Result<LocatedValue> {
+        // 基于 CoreEvaluator 扩展，添加位置信息支持
+    }
+}
+```
+
+#### 9.2.2 扩展 SpecialFormsEvaluator
+```rust
+// 在 special_forms.rs 中添加
+impl SpecialFormsEvaluator {
+    // 现有方法保持不变
+    pub fn eval_quote(args: &[Value], _env: &Environment) -> Result<Value> { ... }
+    
+    // 新增位置感知版本
+    pub fn eval_quote_with_context(
+        args: &[LocatedValue],
+        env: &Environment,
+        context: &mut EvaluationContext,
+    ) -> Result<LocatedValue> { ... }
+}
+```
+
+#### 9.2.3 位置感知的内置函数
+```rust
+// 在 builtins.rs 中添加
+pub fn register_builtins_with_context(env: &Environment) {
+    // 注册带位置信息的内置函数版本
+}
+```
+
+### 9.3 实施优先级
+
+1. **Phase 3.1**: 创建 ContextualEvaluator 基础框架
+2. **Phase 3.2**: 实现执行上下文和调用栈
+3. **Phase 3.3**: 扩展特殊形式支持位置信息
+4. **Phase 3.4**: 位置感知的内置函数
+5. **Phase 3.5**: 集成测试和性能优化
+
+### 9.4 兼容性策略
+
+- **渐进式迁移**: 现有代码继续工作，新功能通过新接口提供
+- **功能标志**: 可选的编译时功能标志控制位置信息支持
+- **性能优化**: 在 release 模式下可选择性禁用位置信息
+
+## 10. 设计文档状态
 - ✅ 阶段一和二已完成实施
-- 📝 阶段三和四的详细设计已确定
+- ✅ 重构完成，架构优化
+- 📝 阶段三详细设计已确定，基于新架构调整
 - 🎯 项目按计划稳步推进
 
 这个设计文档将持续更新，记录实施过程中的经验和教训。
