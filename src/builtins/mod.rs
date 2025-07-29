@@ -27,9 +27,7 @@ pub fn add(args: &[Value]) -> Result<Value> {
                     float_result += f;
                 }
             },
-            _ => return Err(SchemeError::TypeError(
-                format!("+ expects numbers, got {arg}")
-            )),
+            _ => return Err(SchemeError::TypeError(format!("+ expects numbers, got {arg}"), None)),
         }
     }
 
@@ -42,7 +40,7 @@ pub fn add(args: &[Value]) -> Result<Value> {
 
 pub fn subtract(args: &[Value]) -> Result<Value> {
     if args.is_empty() {
-        return Err(SchemeError::ArityError("- requires at least 1 argument".to_string()));
+        return Err(SchemeError::ArityError("- requires at least 1 argument".to_string(), None));
     }
 
     if args.len() == 1 {
@@ -50,9 +48,7 @@ pub fn subtract(args: &[Value]) -> Result<Value> {
         match &args[0] {
             Value::Integer(n) => return Ok(Value::Integer(-n)),
             Value::Float(f) => return Ok(Value::Float(-f)),
-            _ => return Err(SchemeError::TypeError(
-                format!("- expects numbers, got {}", args[0])
-            )),
+            _ => return Err(SchemeError::TypeError(format!("- expects numbers, got {}", args[0]), None)),
         }
     }
 
@@ -64,9 +60,7 @@ pub fn subtract(args: &[Value]) -> Result<Value> {
             is_float = true;
             *f
         },
-        _ => return Err(SchemeError::TypeError(
-            format!("- expects numbers, got {}", args[0])
-        )),
+        _ => return Err(SchemeError::TypeError(format!("- expects numbers, got {}", args[0]), None)),
     };
 
     for arg in &args[1..] {
@@ -76,9 +70,7 @@ pub fn subtract(args: &[Value]) -> Result<Value> {
                 is_float = true;
                 result -= f;
             },
-            _ => return Err(SchemeError::TypeError(
-                format!("- expects numbers, got {arg}")
-            )),
+            _ => return Err(SchemeError::TypeError(format!("- expects numbers, got {arg}"), None)),
         }
     }
 
@@ -115,9 +107,7 @@ pub fn multiply(args: &[Value]) -> Result<Value> {
                     float_result *= f;
                 }
             },
-            _ => return Err(SchemeError::TypeError(
-                format!("* expects numbers, got {arg}")
-            )),
+            _ => return Err(SchemeError::TypeError(format!("* expects numbers, got {arg}"), None)),
         }
     }
 
@@ -130,7 +120,7 @@ pub fn multiply(args: &[Value]) -> Result<Value> {
 
 pub fn divide(args: &[Value]) -> Result<Value> {
     if args.is_empty() {
-        return Err(SchemeError::ArityError("/ requires at least 1 argument".to_string()));
+        return Err(SchemeError::ArityError("/ requires at least 1 argument".to_string(), None));
     }
 
     if args.len() == 1 {
@@ -138,19 +128,17 @@ pub fn divide(args: &[Value]) -> Result<Value> {
         match &args[0] {
             Value::Integer(n) => {
                 if *n == 0 {
-                    return Err(SchemeError::DivisionByZero);
+                    return Err(SchemeError::DivisionByZero(None));
                 }
                 return Ok(Value::Float(1.0 / (*n as f64)));
             },
             Value::Float(f) => {
                 if *f == 0.0 {
-                    return Err(SchemeError::DivisionByZero);
+                    return Err(SchemeError::DivisionByZero(None));
                 }
                 return Ok(Value::Float(1.0 / f));
             },
-            _ => return Err(SchemeError::TypeError(
-                format!("/ expects numbers, got {}", args[0])
-            )),
+            _ => return Err(SchemeError::TypeError(format!("/ expects numbers, got {}", args[0]), None)),
         }
     }
 
@@ -158,28 +146,24 @@ pub fn divide(args: &[Value]) -> Result<Value> {
     let mut result = match &args[0] {
         Value::Integer(n) => *n as f64,
         Value::Float(f) => *f,
-        _ => return Err(SchemeError::TypeError(
-            format!("/ expects numbers, got {}", args[0])
-        )),
+        _ => return Err(SchemeError::TypeError(format!("/ expects numbers, got {}", args[0]), None)),
     };
 
     for arg in &args[1..] {
         match arg {
             Value::Integer(n) => {
                 if *n == 0 {
-                    return Err(SchemeError::DivisionByZero);
+                    return Err(SchemeError::DivisionByZero(None));
                 }
                 result /= *n as f64;
             },
             Value::Float(f) => {
                 if *f == 0.0 {
-                    return Err(SchemeError::DivisionByZero);
+                    return Err(SchemeError::DivisionByZero(None));
                 }
                 result /= f;
             },
-            _ => return Err(SchemeError::TypeError(
-                format!("/ expects numbers, got {arg}")
-            )),
+            _ => return Err(SchemeError::TypeError(format!("/ expects numbers, got {arg}"), None)),
         }
     }
 
@@ -189,7 +173,7 @@ pub fn divide(args: &[Value]) -> Result<Value> {
 /// 比较运算函数
 pub fn equal(args: &[Value]) -> Result<Value> {
     if args.len() != 2 {
-        return Err(SchemeError::ArityError("= requires exactly 2 arguments".to_string()));
+        return Err(SchemeError::ArityError("= requires exactly 2 arguments".to_string(), None));
     }
 
     let result = match (&args[0], &args[1]) {
@@ -197,9 +181,7 @@ pub fn equal(args: &[Value]) -> Result<Value> {
         (Value::Float(a), Value::Float(b)) => a == b,
         (Value::Integer(a), Value::Float(b)) => (*a as f64) == *b,
         (Value::Float(a), Value::Integer(b)) => *a == (*b as f64),
-        _ => return Err(SchemeError::TypeError(
-            "= expects numbers".to_string()
-        )),
+        _ => return Err(SchemeError::TypeError("= expects numbers".to_string(), None)),
     };
 
     Ok(Value::Bool(result))
@@ -207,7 +189,7 @@ pub fn equal(args: &[Value]) -> Result<Value> {
 
 pub fn less_than(args: &[Value]) -> Result<Value> {
     if args.len() != 2 {
-        return Err(SchemeError::ArityError("< requires exactly 2 arguments".to_string()));
+        return Err(SchemeError::ArityError("< requires exactly 2 arguments".to_string(), None));
     }
 
     let result = match (&args[0], &args[1]) {
@@ -215,9 +197,7 @@ pub fn less_than(args: &[Value]) -> Result<Value> {
         (Value::Float(a), Value::Float(b)) => a < b,
         (Value::Integer(a), Value::Float(b)) => (*a as f64) < *b,
         (Value::Float(a), Value::Integer(b)) => *a < (*b as f64),
-        _ => return Err(SchemeError::TypeError(
-            "< expects numbers".to_string()
-        )),
+        _ => return Err(SchemeError::TypeError("< expects numbers".to_string(), None)),
     };
 
     Ok(Value::Bool(result))
@@ -225,7 +205,7 @@ pub fn less_than(args: &[Value]) -> Result<Value> {
 
 pub fn greater_than(args: &[Value]) -> Result<Value> {
     if args.len() != 2 {
-        return Err(SchemeError::ArityError("> requires exactly 2 arguments".to_string()));
+        return Err(SchemeError::ArityError("> requires exactly 2 arguments".to_string(), None));
     }
 
     let result = match (&args[0], &args[1]) {
@@ -233,9 +213,7 @@ pub fn greater_than(args: &[Value]) -> Result<Value> {
         (Value::Float(a), Value::Float(b)) => a > b,
         (Value::Integer(a), Value::Float(b)) => (*a as f64) > *b,
         (Value::Float(a), Value::Integer(b)) => *a > (*b as f64),
-        _ => return Err(SchemeError::TypeError(
-            "> expects numbers".to_string()
-        )),
+        _ => return Err(SchemeError::TypeError("> expects numbers".to_string(), None)),
     };
 
     Ok(Value::Bool(result))
@@ -243,7 +221,7 @@ pub fn greater_than(args: &[Value]) -> Result<Value> {
 
 pub fn less_equal(args: &[Value]) -> Result<Value> {
     if args.len() != 2 {
-        return Err(SchemeError::ArityError("<= requires exactly 2 arguments".to_string()));
+        return Err(SchemeError::ArityError("<= requires exactly 2 arguments".to_string(), None));
     }
 
     let result = match (&args[0], &args[1]) {
@@ -251,9 +229,7 @@ pub fn less_equal(args: &[Value]) -> Result<Value> {
         (Value::Float(a), Value::Float(b)) => a <= b,
         (Value::Integer(a), Value::Float(b)) => (*a as f64) <= *b,
         (Value::Float(a), Value::Integer(b)) => *a <= (*b as f64),
-        _ => return Err(SchemeError::TypeError(
-            "<= expects numbers".to_string()
-        )),
+        _ => return Err(SchemeError::TypeError("<= expects numbers".to_string(), None)),
     };
 
     Ok(Value::Bool(result))
@@ -261,7 +237,7 @@ pub fn less_equal(args: &[Value]) -> Result<Value> {
 
 pub fn greater_equal(args: &[Value]) -> Result<Value> {
     if args.len() != 2 {
-        return Err(SchemeError::ArityError(">= requires exactly 2 arguments".to_string()));
+        return Err(SchemeError::ArityError(">= requires exactly 2 arguments".to_string(), None));
     }
 
     let result = match (&args[0], &args[1]) {
@@ -269,9 +245,7 @@ pub fn greater_equal(args: &[Value]) -> Result<Value> {
         (Value::Float(a), Value::Float(b)) => a >= b,
         (Value::Integer(a), Value::Float(b)) => (*a as f64) >= *b,
         (Value::Float(a), Value::Integer(b)) => *a >= (*b as f64),
-        _ => return Err(SchemeError::TypeError(
-            ">= expects numbers".to_string()
-        )),
+        _ => return Err(SchemeError::TypeError(">= expects numbers".to_string(), None)),
     };
 
     Ok(Value::Bool(result))
@@ -280,21 +254,19 @@ pub fn greater_equal(args: &[Value]) -> Result<Value> {
 /// 数学函数
 pub fn abs_func(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("abs requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("abs requires exactly 1 argument".to_string(), None));
     }
 
     match &args[0] {
         Value::Integer(n) => Ok(Value::Integer(n.abs())),
         Value::Float(f) => Ok(Value::Float(f.abs())),
-        _ => Err(SchemeError::TypeError(
-            format!("abs expects a number, got {}", args[0])
-        )),
+        _ => Err(SchemeError::TypeError(format!("abs expects a number, got {}", args[0]), None)),
     }
 }
 
 pub fn max_func(args: &[Value]) -> Result<Value> {
     if args.is_empty() {
-        return Err(SchemeError::ArityError("max requires at least 1 argument".to_string()));
+        return Err(SchemeError::ArityError("max requires at least 1 argument".to_string(), None));
     }
 
     let mut max_val = &args[0];
@@ -305,9 +277,7 @@ pub fn max_func(args: &[Value]) -> Result<Value> {
         match arg {
             Value::Float(_) => is_float = true,
             Value::Integer(_) => {},
-            _ => return Err(SchemeError::TypeError(
-                format!("max expects numbers, got {}", arg)
-            )),
+            _ => return Err(SchemeError::TypeError(format!("max expects numbers, got {}", arg), None)),
         }
     }
 
@@ -317,7 +287,7 @@ pub fn max_func(args: &[Value]) -> Result<Value> {
             (Value::Float(a), Value::Float(b)) => b > a,
             (Value::Integer(a), Value::Float(b)) => b > &(*a as f64),
             (Value::Float(a), Value::Integer(b)) => (*b as f64) > *a,
-            _ => return Err(SchemeError::TypeError("max expects numbers".to_string())),
+            _ => return Err(SchemeError::TypeError("max expects numbers".to_string(), None)),
         };
         
         if greater {
@@ -338,7 +308,7 @@ pub fn max_func(args: &[Value]) -> Result<Value> {
 
 pub fn min_func(args: &[Value]) -> Result<Value> {
     if args.is_empty() {
-        return Err(SchemeError::ArityError("min requires at least 1 argument".to_string()));
+        return Err(SchemeError::ArityError("min requires at least 1 argument".to_string(), None));
     }
 
     let mut min_val = &args[0];
@@ -349,9 +319,7 @@ pub fn min_func(args: &[Value]) -> Result<Value> {
         match arg {
             Value::Float(_) => is_float = true,
             Value::Integer(_) => {},
-            _ => return Err(SchemeError::TypeError(
-                format!("min expects numbers, got {}", arg)
-            )),
+            _ => return Err(SchemeError::TypeError(format!("min expects numbers, got {}", arg), None)),
         }
     }
 
@@ -361,7 +329,7 @@ pub fn min_func(args: &[Value]) -> Result<Value> {
             (Value::Float(a), Value::Float(b)) => b < a,
             (Value::Integer(a), Value::Float(b)) => b < &(*a as f64),
             (Value::Float(a), Value::Integer(b)) => (*b as f64) < *a,
-            _ => return Err(SchemeError::TypeError("min expects numbers".to_string())),
+            _ => return Err(SchemeError::TypeError("min expects numbers".to_string(), None)),
         };
         
         if less {
@@ -383,7 +351,7 @@ pub fn min_func(args: &[Value]) -> Result<Value> {
 /// 列表操作函数
 pub fn cons(args: &[Value]) -> Result<Value> {
     if args.len() != 2 {
-        return Err(SchemeError::ArityError("cons requires exactly 2 arguments".to_string()));
+        return Err(SchemeError::ArityError("cons requires exactly 2 arguments".to_string(), None));
     }
 
     Ok(Value::Cons(
@@ -394,29 +362,25 @@ pub fn cons(args: &[Value]) -> Result<Value> {
 
 pub fn car(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("car requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("car requires exactly 1 argument".to_string(), None));
     }
 
     match &args[0] {
         Value::Cons(car_val, _) => Ok((**car_val).clone()),
-        Value::Nil => Err(SchemeError::RuntimeError("car of empty list".to_string())),
-        _ => Err(SchemeError::TypeError(
-            format!("car expects a pair, got {}", args[0])
-        )),
+        Value::Nil => Err(SchemeError::RuntimeError("car of empty list".to_string(), None)),
+        _ => Err(SchemeError::TypeError(format!("car expects a pair, got {}", args[0]), None)),
     }
 }
 
 pub fn cdr(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("cdr requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("cdr requires exactly 1 argument".to_string(), None));
     }
 
     match &args[0] {
         Value::Cons(_, cdr_val) => Ok((**cdr_val).clone()),
-        Value::Nil => Err(SchemeError::RuntimeError("cdr of empty list".to_string())),
-        _ => Err(SchemeError::TypeError(
-            format!("cdr expects a pair, got {}", args[0])
-        )),
+        Value::Nil => Err(SchemeError::RuntimeError("cdr of empty list".to_string(), None)),
+        _ => Err(SchemeError::TypeError(format!("cdr expects a pair, got {}", args[0]), None)),
     }
 }
 
@@ -427,7 +391,7 @@ pub fn list(args: &[Value]) -> Result<Value> {
 /// 类型谓词函数
 pub fn is_null(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("null? requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("null? requires exactly 1 argument".to_string(), None));
     }
 
     Ok(Value::Bool(matches!(args[0], Value::Nil)))
@@ -435,7 +399,7 @@ pub fn is_null(args: &[Value]) -> Result<Value> {
 
 pub fn is_pair(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("pair? requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("pair? requires exactly 1 argument".to_string(), None));
     }
 
     Ok(Value::Bool(matches!(args[0], Value::Cons(_, _))))
@@ -443,7 +407,7 @@ pub fn is_pair(args: &[Value]) -> Result<Value> {
 
 pub fn is_number(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("number? requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("number? requires exactly 1 argument".to_string(), None));
     }
 
     Ok(Value::Bool(matches!(args[0], Value::Integer(_) | Value::Float(_))))
@@ -451,7 +415,7 @@ pub fn is_number(args: &[Value]) -> Result<Value> {
 
 pub fn is_symbol(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("symbol? requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("symbol? requires exactly 1 argument".to_string(), None));
     }
 
     Ok(Value::Bool(matches!(args[0], Value::Symbol(_))))
@@ -459,7 +423,7 @@ pub fn is_symbol(args: &[Value]) -> Result<Value> {
 
 pub fn is_string(args: &[Value]) -> Result<Value> {
     if args.len() != 1 {
-        return Err(SchemeError::ArityError("string? requires exactly 1 argument".to_string()));
+        return Err(SchemeError::ArityError("string? requires exactly 1 argument".to_string(), None));
     }
 
     Ok(Value::Bool(matches!(args[0], Value::String(_))))

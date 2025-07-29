@@ -84,10 +84,10 @@ impl EnhancedRepl {
                 }
                 format!("{}", value)
             }
-            Err(SchemeError::SyntaxError(msg)) => {
+            Err(SchemeError::SyntaxError(msg, _)) => {
                 format!("Syntax Error: {}", msg)
             }
-            Err(SchemeError::RuntimeError(msg)) => {
+            Err(SchemeError::RuntimeError(msg, _)) => {
                 format!("Runtime Error: {}", msg)
             }
             Err(e) => {

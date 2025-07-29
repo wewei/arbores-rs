@@ -1,6 +1,25 @@
 use std::fmt;
 use std::rc::Rc;
 
+/// 位置信息结构
+#[derive(Debug, Clone, PartialEq)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl Position {
+    pub fn new(line: usize, column: usize) -> Self {
+        Position { line, column }
+    }
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "line {}, column {}", self.line, self.column)
+    }
+}
+
 /// Scheme 值的核心类型定义
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -134,28 +153,64 @@ impl Value {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchemeError {
     /// 语法错误
-    SyntaxError(String),
+    SyntaxError(String, Option<Position>),
     /// 运行时错误
-    RuntimeError(String),
+    RuntimeError(String, Option<Position>),
     /// 类型错误
-    TypeError(String),
+    TypeError(String, Option<Position>),
     /// 未定义的变量
-    UndefinedVariable(String),
+    UndefinedVariable(String, Option<Position>),
     /// 参数个数错误
-    ArityError(String),
+    ArityError(String, Option<Position>),
     /// 除零错误
-    DivisionByZero,
+    DivisionByZero(Option<Position>),
 }
 
 impl fmt::Display for SchemeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SchemeError::SyntaxError(msg) => write!(f, "Syntax Error: {msg}"),
-            SchemeError::RuntimeError(msg) => write!(f, "Runtime Error: {msg}"),
-            SchemeError::TypeError(msg) => write!(f, "Type Error: {msg}"),
-            SchemeError::UndefinedVariable(var) => write!(f, "Undefined Variable: {var}"),
-            SchemeError::ArityError(msg) => write!(f, "Arity Error: {msg}"),
-            SchemeError::DivisionByZero => write!(f, "Division by zero"),
+            SchemeError::SyntaxError(msg, pos) => {
+                if let Some(pos) = pos {
+                    write!(f, "Syntax Error at {}: {}", pos, msg)
+                } else {
+                    write!(f, "Syntax Error: {}", msg)
+                }
+            },
+            SchemeError::RuntimeError(msg, pos) => {
+                if let Some(pos) = pos {
+                    write!(f, "Runtime Error at {}: {}", pos, msg)
+                } else {
+                    write!(f, "Runtime Error: {}", msg)
+                }
+            },
+            SchemeError::TypeError(msg, pos) => {
+                if let Some(pos) = pos {
+                    write!(f, "Type Error at {}: {}", pos, msg)
+                } else {
+                    write!(f, "Type Error: {}", msg)
+                }
+            },
+            SchemeError::UndefinedVariable(var, pos) => {
+                if let Some(pos) = pos {
+                    write!(f, "Undefined Variable at {}: {}", pos, var)
+                } else {
+                    write!(f, "Undefined Variable: {}", var)
+                }
+            },
+            SchemeError::ArityError(msg, pos) => {
+                if let Some(pos) = pos {
+                    write!(f, "Arity Error at {}: {}", pos, msg)
+                } else {
+                    write!(f, "Arity Error: {}", msg)
+                }
+            },
+            SchemeError::DivisionByZero(pos) => {
+                if let Some(pos) = pos {
+                    write!(f, "Division by zero at {}", pos)
+                } else {
+                    write!(f, "Division by zero")
+                }
+            },
         }
     }
 }

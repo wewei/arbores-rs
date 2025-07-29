@@ -80,7 +80,7 @@ impl EnvironmentManager {
             env_data.bindings.insert(name, value);
             Ok(())
         } else {
-            Err(SchemeError::RuntimeError(format!("Environment {env_id} not found")))
+            Err(SchemeError::RuntimeError(format!("Environment {env_id} not found"), None))
         }
     }
 
@@ -92,10 +92,10 @@ impl EnvironmentManager {
             } else if let Some(parent_id) = env_data.parent_id {
                 self.lookup(parent_id, name)
             } else {
-                Err(SchemeError::UndefinedVariable(name.to_string()))
+                Err(SchemeError::UndefinedVariable(name.to_string(), None))
             }
         } else {
-            Err(SchemeError::RuntimeError(format!("Environment {env_id} not found")))
+            Err(SchemeError::RuntimeError(format!("Environment {env_id} not found"), None))
         }
     }
 
@@ -108,10 +108,10 @@ impl EnvironmentManager {
             } else if let Some(parent_id) = env_data.parent_id {
                 self.set(parent_id, name, value)
             } else {
-                Err(SchemeError::UndefinedVariable(name.to_string()))
+                Err(SchemeError::UndefinedVariable(name.to_string(), None))
             }
         } else {
-            Err(SchemeError::RuntimeError(format!("Environment {env_id} not found")))
+            Err(SchemeError::RuntimeError(format!("Environment {env_id} not found"), None))
         }
     }
 
@@ -119,7 +119,7 @@ impl EnvironmentManager {
     pub fn extend(&mut self, parent_id: EnvironmentId, names: Vec<String>, values: Vec<Value>) -> Result<EnvironmentId> {
         if names.len() != values.len() {
             return Err(SchemeError::ArityError(
-                format!("Expected {} arguments, got {}", names.len(), values.len())
+                format!("Expected {} arguments, got {}", names.len(), values.len()), None
             ));
         }
 

@@ -1,10 +1,10 @@
 use std::rc::Rc;
-use crate::lexer::{Lexer, Token};
-use crate::types::{Value, SchemeError, Result};
+use crate::lexer::{Lexer, Token, LocatedToken};
+use crate::types::{Value, SchemeError, Result, Position};
 
 /// 语法分析器
 pub struct Parser {
-    tokens: Vec<Token>,
+    tokens: Vec<LocatedToken>,
     position: usize,
 }
 
@@ -12,8 +12,8 @@ impl Parser {
     /// 创建新的语法分析器
     pub fn new(input: &str) -> Result<Self> {
         let mut lexer = Lexer::new(input);
-        let tokens = lexer.tokenize()
-            .map_err(SchemeError::SyntaxError)?;
+        let tokens = lexer.tokenize_with_positions()
+            .map_err(|e| SchemeError::SyntaxError(e, None))?;
         
         Ok(Parser {
             tokens,
@@ -23,7 +23,12 @@ impl Parser {
 
     /// 获取当前 token
     fn current_token(&self) -> &Token {
-        self.tokens.get(self.position).unwrap_or(&Token::EOF)
+        self.tokens.get(self.position).map(|lt| &lt.token).unwrap_or(&Token::EOF)
+    }
+
+    /// 获取当前位置信息
+    fn current_position(&self) -> Option<Position> {
+        self.tokens.get(self.position).map(|lt| lt.position.clone())
     }
 
     /// 移动到下一个 token
@@ -36,7 +41,7 @@ impl Parser {
     /// 解析单个表达式
     pub fn parse_expression(&mut self) -> Result<Value> {
         match self.current_token().clone() {
-            Token::EOF => Err(SchemeError::SyntaxError("Unexpected end of input".to_string())),
+            Token::EOF => Err(SchemeError::SyntaxError("Unexpected end of input".to_string(), self.current_position())),
             
             Token::Integer(n) => {
                 self.advance();
@@ -105,7 +110,7 @@ impl Parser {
             },
             
             _ => Err(SchemeError::SyntaxError(
-                format!("Unexpected token: {}", self.current_token())
+                format!("Unexpected token: {}", self.current_token()), self.current_position()
             )),
         }
     }
@@ -120,7 +125,7 @@ impl Parser {
                 self.advance();
                 if elements.is_empty() {
                     return Err(SchemeError::SyntaxError(
-                        "Unexpected dot at beginning of list".to_string()
+                        "Unexpected dot at beginning of list".to_string(), self.current_position()
                     ));
                 }
                 
@@ -128,7 +133,7 @@ impl Parser {
                 
                 if !matches!(self.current_token(), Token::RightParen) {
                     return Err(SchemeError::SyntaxError(
-                        "Expected ')' after dot in dotted pair".to_string()
+                        "Expected ')' after dot in dotted pair".to_string(), self.current_position()
                     ));
                 }
                 self.advance(); // 跳过 ')'
@@ -145,7 +150,7 @@ impl Parser {
         }
 
         if matches!(self.current_token(), Token::EOF) {
-            return Err(SchemeError::SyntaxError("Unclosed list".to_string()));
+            return Err(SchemeError::SyntaxError("Unclosed list".to_string(), self.current_position()));
         }
 
         self.advance(); // 跳过 ')'

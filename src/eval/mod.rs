@@ -210,18 +210,18 @@ impl Evaluator {
                         self.eval_application(&list, env)
                     }
                 } else {
-                    Err(SchemeError::RuntimeError("Invalid list structure".to_string()))
+                    Err(SchemeError::RuntimeError("Invalid list structure".to_string(), None))
                 }
             },
             
-            _ => Err(SchemeError::RuntimeError(format!("Cannot evaluate {expr}"))),
+            _ => Err(SchemeError::RuntimeError(format!("Cannot evaluate {expr}"), None)),
         }
     }
 
     /// 求值 quote 特殊形式
     fn eval_quote(&self, args: &[Value], _env: &Environment) -> Result<Value> {
         if args.len() != 1 {
-            return Err(SchemeError::ArityError("quote requires exactly 1 argument".to_string()));
+            return Err(SchemeError::ArityError("quote requires exactly 1 argument".to_string(), None));
         }
         Ok(args[0].clone())
     }
@@ -229,7 +229,7 @@ impl Evaluator {
     /// 求值 if 特殊形式
     fn eval_if(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() < 2 || args.len() > 3 {
-            return Err(SchemeError::ArityError("if requires 2 or 3 arguments".to_string()));
+            return Err(SchemeError::ArityError("if requires 2 or 3 arguments".to_string(), None));
         }
 
         let condition = self.eval(&args[0], env)?;
@@ -246,7 +246,7 @@ impl Evaluator {
     /// 求值 define 特殊形式
     fn eval_define(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() != 2 {
-            return Err(SchemeError::ArityError("define requires exactly 2 arguments".to_string()));
+            return Err(SchemeError::ArityError("define requires exactly 2 arguments".to_string(), None));
         }
 
         match &args[0] {
@@ -255,14 +255,14 @@ impl Evaluator {
                 env.define(name.clone(), value)?;
                 Ok(Value::Nil)
             },
-            _ => Err(SchemeError::TypeError("define expects a symbol".to_string())),
+            _ => Err(SchemeError::TypeError("define expects a symbol".to_string(), None)),
         }
     }
 
     /// 求值 set! 特殊形式
     fn eval_set(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() != 2 {
-            return Err(SchemeError::ArityError("set! requires exactly 2 arguments".to_string()));
+            return Err(SchemeError::ArityError("set! requires exactly 2 arguments".to_string(), None));
         }
 
         match &args[0] {
@@ -271,14 +271,14 @@ impl Evaluator {
                 env.set(name, value)?;
                 Ok(Value::Nil)
             },
-            _ => Err(SchemeError::TypeError("set! expects a symbol".to_string())),
+            _ => Err(SchemeError::TypeError("set! expects a symbol".to_string(), None)),
         }
     }
 
     /// 求值 lambda 特殊形式
     fn eval_lambda(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() != 2 {
-            return Err(SchemeError::ArityError("lambda requires exactly 2 arguments".to_string()));
+            return Err(SchemeError::ArityError("lambda requires exactly 2 arguments".to_string(), None));
         }
 
         // 解析参数列表
@@ -291,16 +291,12 @@ impl Evaluator {
                         if let Value::Symbol(name) = param {
                             params.push(name);
                         } else {
-                            return Err(SchemeError::TypeError(
-                                "lambda parameters must be symbols".to_string()
-                            ));
+                            return Err(SchemeError::TypeError("lambda parameters must be symbols".to_string(), None));
                         }
                     }
                     params
                 } else {
-                    return Err(SchemeError::TypeError(
-                        "lambda parameters must be a list".to_string()
-                    ));
+                    return Err(SchemeError::TypeError("lambda parameters must be a list".to_string(), None));
                 }
             }
         };
@@ -315,7 +311,7 @@ impl Evaluator {
     /// 求值 let 特殊形式
     fn eval_let(&self, args: &[Value], env: &Environment) -> Result<Value> {
         if args.len() != 2 {
-            return Err(SchemeError::ArityError("let requires exactly 2 arguments".to_string()));
+            return Err(SchemeError::ArityError("let requires exactly 2 arguments".to_string(), None));
         }
 
         // 解析绑定列表
@@ -331,26 +327,18 @@ impl Evaluator {
                                     let value = self.eval(&pair[1], env)?;
                                     bindings.push((name.clone(), value));
                                 } else {
-                                    return Err(SchemeError::TypeError(
-                                        "let binding name must be a symbol".to_string()
-                                    ));
+                                    return Err(SchemeError::TypeError("let binding name must be a symbol".to_string(), None));
                                 }
                             } else {
-                                return Err(SchemeError::TypeError(
-                                    "let binding must have exactly 2 elements".to_string()
-                                ));
+                                return Err(SchemeError::TypeError("let binding must have exactly 2 elements".to_string(), None));
                             }
                         } else {
-                            return Err(SchemeError::TypeError(
-                                "let binding must be a list".to_string()
-                            ));
+                            return Err(SchemeError::TypeError("let binding must be a list".to_string(), None));
                         }
                     }
                     bindings
                 } else {
-                    return Err(SchemeError::TypeError(
-                        "let bindings must be a list".to_string()
-                    ));
+                    return Err(SchemeError::TypeError("let bindings must be a list".to_string(), None));
                 }
             }
         };
@@ -416,9 +404,7 @@ impl Evaluator {
         for clause in args {
             if let Some(clause_list) = clause.to_vec() {
                 if clause_list.len() < 1 {
-                    return Err(SchemeError::SyntaxError(
-                        "cond clause must have at least a condition".to_string()
-                    ));
+                    return Err(SchemeError::SyntaxError("cond clause must have at least a condition".to_string(), None));
                 }
                 
                 // 检查是否为 else 子句
@@ -449,9 +435,7 @@ impl Evaluator {
                     }
                 }
             } else {
-                return Err(SchemeError::SyntaxError(
-                    "cond clause must be a list".to_string()
-                ));
+                return Err(SchemeError::SyntaxError("cond clause must be a list".to_string(), None));
             }
         }
         
@@ -481,7 +465,7 @@ impl Evaluator {
                 if let Some(expected_arity) = arity {
                     if args.len() != expected_arity {
                         return Err(SchemeError::ArityError(
-                            format!("Expected {} arguments, got {}", expected_arity, args.len())
+                            format!("Expected {} arguments, got {}", expected_arity, args.len()), None
                         ));
                     }
                 }
@@ -491,7 +475,7 @@ impl Evaluator {
             Value::Lambda { params, body, env_id } => {
                 if args.len() != params.len() {
                     return Err(SchemeError::ArityError(
-                        format!("Expected {} arguments, got {}", params.len(), args.len())
+                        format!("Expected {} arguments, got {}", params.len(), args.len()), None
                     ));
                 }
                 
@@ -501,9 +485,7 @@ impl Evaluator {
                 self.eval(&body, &new_env)
             },
             
-            _ => Err(SchemeError::TypeError(
-                format!("Cannot apply non-function: {func}")
-            )),
+            _ => Err(SchemeError::TypeError(format!("Cannot apply non-function: {func}"), None)),
         }
     }
 

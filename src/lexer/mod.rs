@@ -1,23 +1,5 @@
 use std::fmt;
-
-/// 位置信息结构
-#[derive(Debug, Clone, PartialEq)]
-pub struct Position {
-    pub line: usize,
-    pub column: usize,
-}
-
-impl Position {
-    pub fn new(line: usize, column: usize) -> Self {
-        Position { line, column }
-    }
-}
-
-impl fmt::Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.line, self.column)
-    }
-}
+use crate::types::Position;
 
 /// 带位置信息的 Token
 #[derive(Debug, Clone, PartialEq)]
@@ -292,6 +274,23 @@ impl Lexer {
             let token = self.next_token()?;
             let is_eof = matches!(token, Token::EOF);
             tokens.push(token);
+            if is_eof {
+                break;
+            }
+        }
+        
+        Ok(tokens)
+    }
+
+    /// 生成带位置信息的token列表
+    pub fn tokenize_with_positions(&mut self) -> Result<Vec<LocatedToken>, String> {
+        let mut tokens = Vec::new();
+        
+        loop {
+            let pos = Position::new(self.line, self.column);
+            let token = self.next_token()?;
+            let is_eof = matches!(token, Token::EOF);
+            tokens.push(LocatedToken::new(token, pos));
             if is_eof {
                 break;
             }
