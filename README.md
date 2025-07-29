@@ -34,14 +34,45 @@
 ## 快速开始
 
 ```bash
-# 运行基础 Scheme 解释器
+# 启动交互式 REPL
 cargo run
+
+# 执行 Scheme 文件
+cargo run examples/arithmetic.scm
+
+# 从标准输入执行代码
+echo "(+ 1 2 3)" | cargo run
+
+# 直接求值表达式
+cargo run -- -e "(* 4 5)"
 
 # 运行测试
 cargo test
 
 # 构建发布版本
 cargo build --release
+```
+
+### 命令行选项
+
+```
+Arbores Scheme Interpreter
+
+Usage: arbores [OPTIONS] [FILE]
+
+Arguments:
+  [FILE]  Scheme file to execute (use "--" to read from stdin)
+
+Options:
+  -e, --eval <EXPRESSION>  Evaluate expression and exit
+  -h, --help               Print help
+  -V, --version            Print version
+
+Examples:
+  arbores                           Start interactive REPL
+  arbores script.scm                Execute Scheme file
+  arbores -e '(+ 1 2 3)'            Evaluate expression
+  echo '(* 4 5)' | arbores --       Read from stdin
 ```
 
 ## 项目结构
