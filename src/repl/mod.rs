@@ -124,7 +124,7 @@ impl Repl {
 
     /// 求值并返回结果
     fn evaluate(&mut self, input: &str) -> String {
-        match self.evaluator.eval_string(input) {
+        match self.evaluator.eval_string(input, None) {
             Ok(value) => {
                 // 如果是定义操作，更新上下文（简单检测）
                 if input.trim().starts_with("(define ") {
@@ -250,7 +250,7 @@ Navigation:
         
         for expr in expressions {
             let global_env = self.evaluator.get_global_env();
-            let result = self.evaluator.eval(&expr, &global_env)?;
+            let result = self.evaluator.eval(&expr, &global_env, None)?;
             results.push(result);
         }
         
@@ -259,7 +259,7 @@ Navigation:
 
     /// 便利方法：求值单个表达式（用于测试）
     pub fn eval(&mut self, input: &str) -> Result<crate::types::Value, crate::types::SchemeError> {
-        self.evaluator.eval_string(input)
+        self.evaluator.eval_string(input, None)
     }
 }
 

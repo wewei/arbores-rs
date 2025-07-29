@@ -21,7 +21,7 @@ pub use arbores::Arbores;
 /// Convenience function to evaluate a Scheme expression from a string
 pub fn eval(input: &str) -> Result<Value> {
     let evaluator = Evaluator::new();
-    evaluator.eval_string(input)
+    evaluator.eval_string(input, None)
 }
 
 /// Convenience function to parse a Scheme expression from a string

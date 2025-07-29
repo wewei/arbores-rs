@@ -223,7 +223,7 @@ impl Arbores {
 
     /// 求值 Scheme 表达式（用于测试和演示）
     pub fn eval(&self, input: &str) -> Result<Value> {
-        self.evaluator.eval_string(input)
+        self.evaluator.eval_string(input, None)
     }
 
     /// 前缀匹配的辅助方法
