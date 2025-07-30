@@ -2,139 +2,38 @@
 
 ## 概述
 
-Arbores 解释器是整个系统的核心，负责解析、求值和执行 Scheme 代码。它既要实现标准的 Scheme 语言特性，又要与仓库管理器集成，提供代码存储和查询的能力。
+Arbores 解释器是整个系统的核心，负责解析、求值和执行 Scheme 代码。除了标准的 Scheme Standard Procedure 外，还要支持对 Arbores 代码仓库的访问。
 
 ## 设计目标
 
-- **标准兼容**：目标支持 R7RS Scheme 标准
-- **有状态执行**：维护持久化的代码库状态
-- **仓库集成**：通过特殊形式与仓库管理器交互
+- **标准兼容**：目标支持 R7RS Scheme 标准（除部分需要被沙盒排除掉的系统 Procedure）
 - **性能优化**：高效的解析和执行引擎
 - **错误处理**：详细的错误信息和调试支持
+- **仓库集成**：通过特殊形式与仓库管理器交互
 
-## 核心组件
+## 架构设计
 
-### 词法分析器 (Lexer)
+### 处理流程
 
-TODO: 详细设计
+```text
+源代码 → (Lexer) → Token流
+                    ↓
+SExpr<MValue> ← (Parser)
+  ↓
+(Expander) → SExpr<Value>
+                    ↓
+      Value ← (Evaluator)
+```
 
-### 语法分析器 (Parser)
+### 核心组件
 
-TODO: 详细设计
+Arbores 解释器由五个核心组件组成，每个组件都有独立的设计文档：
 
-### 求值器 (Evaluator)
-
-TODO: 详细设计
-
-### 环境管理 (Environment)
-
-TODO: 详细设计
-
-### 内置函数 (Builtins)
-
-TODO: 详细设计
-
-### 特殊形式 (Special Forms)
-
-TODO: 详细设计
-
-## 数据类型系统
-
-### 基本数据类型
-
-TODO: 详细设计
-
-### 复合数据类型
-
-TODO: 详细设计
-
-### 类型转换
-
-TODO: 详细设计
-
-## 仓库集成
-
-### 仓库操作特殊形式
-
-TODO: 详细设计
-
-### 代码引用机制
-
-TODO: 详细设计
-
-### 依赖解析
-
-TODO: 详细设计
-
-## 错误处理
-
-### 错误类型
-
-TODO: 详细设计
-
-### 错误传播
-
-TODO: 详细设计
-
-### 调试信息
-
-TODO: 详细设计
-
-## 性能优化
-
-### 尾调用优化
-
-TODO: 详细设计
-
-### 内存管理
-
-TODO: 详细设计
-
-### 缓存策略
-
-TODO: 详细设计
-
-## 扩展机制
-
-### 宏系统
-
-TODO: 详细设计
-
-### FFI 接口
-
-TODO: 详细设计
-
-### 插件架构
-
-TODO: 详细设计
-
-## 测试策略
-
-### 单元测试
-
-TODO: 详细设计
-
-### 集成测试
-
-TODO: 详细设计
-
-### 兼容性测试
-
-TODO: 详细设计
-
-## API 设计
-
-### 公共接口
-
-TODO: 详细设计
-
-### 内部接口
-
-TODO: 详细设计
-
-### 回调机制
-
-TODO: 详细设计
+1. **[词法分析器 (Lexer)](./interpreter/Lexer_Design.md)** - 将源代码转换为Token流
+2. **[语法分析器 (Parser)](./interpreter/Parser_Design.md)** - 将Token流解析为抽象语法树
+3. **[环境管理 (Environment)](./interpreter/Environment_Management.md)** - 管理变量绑定和作用域
+4. **[宏展开器 (Expander)](./interpreter/Macro_Expander.md)** - 处理宏定义和展开
+5. **[执行器 (Evaluator)](./interpreter/Evaluator_Design.md)** - 求值表达式并执行代码
 
 ## 参考文档
 
