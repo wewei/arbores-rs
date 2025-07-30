@@ -245,21 +245,30 @@ Navigation:
 
     /// 求值多个表达式
     pub fn eval_multiple(&mut self, input: &str) -> Result<Vec<crate::types::Value>, crate::types::SchemeError> {
-        let expressions = Parser::parse_multiple(input)?;
+        let expressions = Parser::parse_multiple_located(input)?;
         let mut results = Vec::new();
         
-        for expr in expressions {
+        // 创建根上下文以支持 callstack 追踪
+        let root_context = crate::eval::EvaluationContext::new();
+        
+        for located_expr in expressions {
             let global_env = self.evaluator.get_global_env();
-            let result = self.evaluator.eval(&expr, &global_env, None)?;
+            let result = self.evaluator.eval_located(&located_expr, &global_env, Some(&root_context))?;
             results.push(result);
         }
         
         Ok(results)
     }
 
-    /// 便利方法：求值单个表达式（用于测试）
-    pub fn eval(&mut self, input: &str) -> Result<crate::types::Value, crate::types::SchemeError> {
-        self.evaluator.eval_string(input, None)
+    /// 便利方法：求值单个表达式（用于测试和交互）
+    /// context: 可选的求值上下文，用于 callstack 追踪，传入 None 为简单求值
+    pub fn eval(&mut self, input: &str, context: Option<&crate::eval::EvaluationContext>) -> Result<crate::types::Value, crate::types::SchemeError> {
+        self.evaluator.eval_string(input, context)
+    }
+    
+    /// 获取全局环境
+    pub fn global_env(&self) -> crate::env::Environment {
+        self.evaluator.global_env()
     }
 }
 
@@ -291,9 +300,9 @@ mod tests {
     fn test_repl_basic() {
         let mut repl = Repl::new().unwrap();
         
-        assert_eq!(repl.eval("42").unwrap(), Value::Integer(42));
-        assert_eq!(repl.eval("(+ 1 2)").unwrap(), Value::Integer(3));
-        assert_eq!(repl.eval("'hello").unwrap(), Value::Symbol("hello".to_string()));
+        assert_eq!(repl.eval("42", None).unwrap(), Value::Integer(42));
+        assert_eq!(repl.eval("(+ 1 2)", None).unwrap(), Value::Integer(3));
+        assert_eq!(repl.eval("'hello", None).unwrap(), Value::Symbol("hello".to_string()));
     }
 
     #[test]

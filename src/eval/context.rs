@@ -41,10 +41,11 @@ impl EvaluationContext {
         let mut current = Some(self);
         
         while let Some(ctx) = current {
-            if let Some(pos) = ctx.current_position {
+            // 如果有函数名，就添加到调用栈中，即使没有位置信息
+            if ctx.function_name.is_some() || ctx.current_position.is_some() {
                 stack.push(CallFrame {
                     function_name: ctx.function_name.clone(),
-                    position: pos,
+                    position: ctx.current_position.unwrap_or(Position::new(0, 0)), // 使用默认位置
                     expression: String::new(),
                 });
             }
@@ -62,15 +63,34 @@ impl EvaluationContext {
             return String::new();
         }
         
-        let mut result = String::from("Call stack:\n");
-        for (i, frame) in stack.iter().enumerate() {
-            result.push_str(&format!(
-                "  {}. {} at {}\n",
-                i + 1,
+        // TODO: 改进位置信息显示
+        // 当前所有函数调用都显示调用点位置（如 line 17, column 1）
+        // 理想情况下应该显示每个函数在其定义中被调用的具体位置
+        // 这需要解析器为嵌套表达式提供更精确的位置信息
+        
+        if stack.len() == 1 {
+            let frame = &stack[0];
+            return format!(
+                "Call stack:\n  1. {} at {}\n",
                 frame.function_name.as_deref().unwrap_or("<anonymous>"),
                 frame.position
-            ));
+            );
         }
+        
+        let mut result = String::from("Call stack:\n");
+        let mut call_chain = Vec::new();
+        
+        for frame in &stack {
+            call_chain.push(frame.function_name.as_deref().unwrap_or("<anonymous>"));
+        }
+        
+        let call_point = &stack[0];
+        result.push_str(&format!(
+            "  {} (called at {})\n",
+            call_chain.join(" -> "),
+            call_point.position
+        ));
+        
         result
     }
 }

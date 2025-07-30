@@ -38,12 +38,48 @@ impl SpecialFormsEvaluator {
         }
 
         match &args[0] {
+            // 变量定义: (define var value)
             Value::Symbol(name) => {
                 let value = eval_fn(&args[1], env)?;
                 env.define(name.clone(), value)?;
                 Ok(Value::Nil)
             },
-            _ => Err(SchemeError::TypeError("define expects a symbol".to_string(), None)),
+            // 函数定义: (define (func-name param1 param2 ...) body)
+            Value::Cons(_, _) => {
+                if let Some(func_def) = args[0].to_vec() {
+                    if func_def.is_empty() {
+                        return Err(SchemeError::TypeError("Empty function definition".to_string(), None));
+                    }
+                    
+                    // 第一个元素应该是函数名
+                    if let Value::Symbol(func_name) = &func_def[0] {
+                        // 剩余的元素是参数列表
+                        let mut params = Vec::new();
+                        for param in &func_def[1..] {
+                            if let Value::Symbol(param_name) = param {
+                                params.push(param_name.clone());
+                            } else {
+                                return Err(SchemeError::TypeError("Function parameters must be symbols".to_string(), None));
+                            }
+                        }
+                        
+                        // 创建 lambda 并绑定到函数名
+                        let lambda = Value::Lambda {
+                            params,
+                            body: Rc::new(args[1].clone()),
+                            env_id: env.id(),
+                        };
+                        
+                        env.define(func_name.clone(), lambda)?;
+                        Ok(Value::Nil)
+                    } else {
+                        Err(SchemeError::TypeError("Function name must be a symbol".to_string(), None))
+                    }
+                } else {
+                    Err(SchemeError::TypeError("Invalid function definition".to_string(), None))
+                }
+            },
+            _ => Err(SchemeError::TypeError("define expects a symbol or function definition".to_string(), None)),
         }
     }
 

@@ -220,7 +220,7 @@ impl Value {
 }
 
 /// 错误类型定义
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum SchemeError {
     /// 语法错误
     SyntaxError(String, Option<Position>),
@@ -234,6 +234,29 @@ pub enum SchemeError {
     ArityError(String, Option<Position>),
     /// 除零错误
     DivisionByZero(Option<Position>),
+    /// 带调用栈的运行时错误
+    RuntimeErrorWithCallStack {
+        message: String,
+        position: Option<Position>,
+        call_stack: Option<String>,
+    },
+}
+
+// 手动实现 PartialEq，忽略 call_stack 字段以保持兼容性
+impl PartialEq for SchemeError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SchemeError::SyntaxError(a, ap), SchemeError::SyntaxError(b, bp)) => a == b && ap == bp,
+            (SchemeError::RuntimeError(a, ap), SchemeError::RuntimeError(b, bp)) => a == b && ap == bp,
+            (SchemeError::TypeError(a, ap), SchemeError::TypeError(b, bp)) => a == b && ap == bp,
+            (SchemeError::UndefinedVariable(a, ap), SchemeError::UndefinedVariable(b, bp)) => a == b && ap == bp,
+            (SchemeError::ArityError(a, ap), SchemeError::ArityError(b, bp)) => a == b && ap == bp,
+            (SchemeError::DivisionByZero(ap), SchemeError::DivisionByZero(bp)) => ap == bp,
+            (SchemeError::RuntimeErrorWithCallStack { message: a, position: ap, .. }, 
+             SchemeError::RuntimeErrorWithCallStack { message: b, position: bp, .. }) => a == b && ap == bp,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for SchemeError {
@@ -281,11 +304,76 @@ impl fmt::Display for SchemeError {
                     write!(f, "Division by zero")
                 }
             },
+            SchemeError::RuntimeErrorWithCallStack { message, position, call_stack } => {
+                if let Some(pos) = position {
+                    write!(f, "Runtime Error at {}: {}", pos, message)?;
+                } else {
+                    write!(f, "Runtime Error: {}", message)?;
+                }
+                
+                if let Some(stack) = call_stack {
+                    write!(f, "\n{}", stack)?;
+                }
+                
+                Ok(())
+            },
         }
     }
 }
 
 impl std::error::Error for SchemeError {}
+
+impl SchemeError {
+    /// 创建一个带调用栈的运行时错误
+    pub fn runtime_error_with_callstack(
+        message: String, 
+        position: Option<Position>, 
+        call_stack: Option<String>
+    ) -> Self {
+        SchemeError::RuntimeErrorWithCallStack {
+            message,
+            position,
+            call_stack,
+        }
+    }
+    
+    /// 将现有错误转换为带调用栈的错误
+    pub fn with_callstack(self, call_stack: String) -> Self {
+        match self {
+            SchemeError::RuntimeError(msg, pos) => 
+                SchemeError::RuntimeErrorWithCallStack {
+                    message: msg,
+                    position: pos,
+                    call_stack: Some(call_stack),
+                },
+            SchemeError::DivisionByZero(pos) => 
+                SchemeError::RuntimeErrorWithCallStack {
+                    message: "Division by zero".to_string(),
+                    position: pos,
+                    call_stack: Some(call_stack),
+                },
+            SchemeError::TypeError(msg, pos) => 
+                SchemeError::RuntimeErrorWithCallStack {
+                    message: format!("Type Error: {}", msg),
+                    position: pos,
+                    call_stack: Some(call_stack),
+                },
+            SchemeError::UndefinedVariable(var, pos) => 
+                SchemeError::RuntimeErrorWithCallStack {
+                    message: format!("Undefined Variable: {}", var),
+                    position: pos,
+                    call_stack: Some(call_stack),
+                },
+            SchemeError::ArityError(msg, pos) => 
+                SchemeError::RuntimeErrorWithCallStack {
+                    message: format!("Arity Error: {}", msg),
+                    position: pos,
+                    call_stack: Some(call_stack),
+                },
+            other => other, // 保持其他错误类型不变
+        }
+    }
+}
 
 pub type Result<T> = std::result::Result<T, SchemeError>;
 
