@@ -164,7 +164,6 @@ impl Position {
     }
 }
 ```
-```
 
 ### 辅助类型方法
 
@@ -309,7 +308,13 @@ static SCHEME_STATE_MACHINE: StateMachine = StateMachine {
                 pattern: Pattern::Char('('), 
                 action: StateAction { 
                     next_state: 0, 
-                    emit_token: Some(Box::new(emit_left_paren)) 
+                    emit_token: Some(Box::new(|raw_text, position| {
+                        Ok(Token {
+                            token_type: TokenType::LeftParen,
+                            position,
+                            raw_text: raw_text.to_string(),
+                        })
+                    }))
                 }
             },
             // ... 更多规则
