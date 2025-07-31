@@ -45,8 +45,25 @@ impl<I: Iterator<Item = char>> Iterator for LexerIterator<I> {
             return None;
         }
 
-        // 如果没有更多字符，生成 EOF Token
+        // 如果没有更多字符，检查是否还有待处理的缓冲区内容
         if !self.state.chars.has_more() {
+            // 如果缓冲区有内容，先处理缓冲区
+            if !self.state.buffer.is_empty() {
+                let fallback = &self.state.state_machine.fallback_rules[self.state.state];
+                if let Some(emitter) = fallback.emit_token {
+                    let token_start_pos = self.state.current_pos;
+                    let buffer_copy = self.state.buffer.clone();
+                    self.state.buffer.clear();
+                    self.state.state = fallback.next_state;
+                    return Some(emitter(&buffer_copy, token_start_pos));
+                } else {
+                    // 如果 fallback 不生成 Token，清空缓冲区并继续
+                    self.state.buffer.clear();
+                    self.state.state = fallback.next_state;
+                }
+            }
+            
+            // 最后生成 EOF Token
             self.finished = true;
             return Some(emit_eof("", self.state.current_pos));
         }
@@ -388,5 +405,42 @@ mod tests {
         // 只应该有 EOF token
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].token_type, TokenType::Eof);
+    }
+
+    #[test]
+    fn test_character_literals() {
+        let input = "#\\a #\\space #\\newline #\\tab";
+        let tokens: Result<Vec<_>, _> = filter_trivia_tokens(tokenize_string(input)).collect();
+        
+        assert!(tokens.is_ok());
+        let tokens = tokens.unwrap();
+        
+        // 应该有 4 个字符 Token 和 1 个 EOF
+        let characters: Vec<_> = tokens.iter()
+            .filter(|token| matches!(token.token_type, TokenType::Character(_)))
+            .collect();
+            
+        assert_eq!(characters.len(), 4);
+        
+        // 验证具体的字符值
+        match &characters[0].token_type {
+            TokenType::Character(c) => assert_eq!(*c, 'a'),
+            _ => panic!("Expected character token"),
+        }
+        
+        match &characters[1].token_type {
+            TokenType::Character(c) => assert_eq!(*c, ' '),
+            _ => panic!("Expected character token"),
+        }
+        
+        match &characters[2].token_type {
+            TokenType::Character(c) => assert_eq!(*c, '\n'),
+            _ => panic!("Expected character token"),
+        }
+        
+        match &characters[3].token_type {
+            TokenType::Character(c) => assert_eq!(*c, '\t'),
+            _ => panic!("Expected character token"),
+        }
     }
 }

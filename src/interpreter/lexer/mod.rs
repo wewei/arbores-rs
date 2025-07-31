@@ -9,9 +9,6 @@ pub mod rules;
 pub mod engine;
 pub mod demo;
 
-#[cfg(test)]
-mod debug_test;
-
 // 重新导出主要的公共类型和函数
 pub use types::{Token, TokenType, LexError, Position};
 pub use char_stream::CharStream;

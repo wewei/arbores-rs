@@ -18,6 +18,7 @@ pub const STATE_STRING_ESCAPE: usize = 3;
 pub const STATE_SYMBOL: usize = 4;
 pub const STATE_COMMENT: usize = 5;
 pub const STATE_WHITESPACE: usize = 6;
+pub const STATE_CHARACTER: usize = 7;
 
 // ============================================================================
 // Token 生成器函数 - 纯函数实现
@@ -381,6 +382,11 @@ pub fn get_scheme_state_machine() -> StateMachine {
                     Pattern::CharClass(is_whitespace_char),
                     StateAction::new(STATE_WHITESPACE, None)
                 ),
+                // 字符字面量开始 (#\)
+                TransitionRule::new(
+                    Pattern::String("#\\"),
+                    StateAction::new(STATE_CHARACTER, None)
+                ),
                 // 数字开始
                 TransitionRule::new(
                     Pattern::CharClass(|c| c.is_ascii_digit()),
@@ -461,6 +467,20 @@ pub fn get_scheme_state_machine() -> StateMachine {
                     StateAction::new(STATE_WHITESPACE, None)
                 ),
             ],
+            
+            // STATE_CHARACTER (7) 的规则
+            vec![
+                // 收集字符名（如 "space", "newline"）或单个字符
+                TransitionRule::new(
+                    Pattern::CharClass(|c| c.is_alphabetic()),
+                    StateAction::new(STATE_CHARACTER, None)
+                ),
+                // 单个字符（除了字母以外的可打印字符）
+                TransitionRule::new(
+                    Pattern::CharClass(|c| !c.is_alphabetic() && !is_delimiter_char(c)),
+                    StateAction::new(STATE_INITIAL, Some(emit_character))
+                ),
+            ],
         ],
         
         fallback_rules: vec![
@@ -478,6 +498,8 @@ pub fn get_scheme_state_machine() -> StateMachine {
             StateAction::new(STATE_INITIAL, Some(emit_comment)),
             // STATE_WHITESPACE 的 fallback - 空白字符结束
             StateAction::new(STATE_INITIAL, Some(emit_whitespace)),
+            // STATE_CHARACTER 的 fallback - 字符结束
+            StateAction::new(STATE_INITIAL, Some(emit_character)),
         ],
     }
 }
