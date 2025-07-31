@@ -299,15 +299,23 @@ fn emit_comment(raw_text: &str, position: Position) -> Result<Token, LexError>
 
 **状态机定义**：
 ```rust
+// 状态常量定义
+const STATE_INITIAL: usize = 0;
+const STATE_NUMBER: usize = 1;
+const STATE_STRING: usize = 2;
+const STATE_SYMBOL: usize = 3;
+const STATE_COMMENT: usize = 4;
+const STATE_STRING_ESCAPE: usize = 5;
+
 // 预定义的状态机规则集
 static SCHEME_STATE_MACHINE: StateMachine = StateMachine {
     rules: vec![
-        // STATE_INITIAL (0) 的规则
+        // STATE_INITIAL 的规则
         vec![
             TransitionRule { 
                 pattern: Pattern::Char('('), 
                 action: StateAction { 
-                    next_state: 0, 
+                    next_state: STATE_INITIAL, 
                     emit_token: Some(Box::new(|raw_text, position| {
                         Ok(Token {
                             token_type: TokenType::LeftParen,
@@ -317,11 +325,55 @@ static SCHEME_STATE_MACHINE: StateMachine = StateMachine {
                     }))
                 }
             },
+            TransitionRule { 
+                pattern: Pattern::CharClass(|c| c.is_ascii_digit()), 
+                action: StateAction { 
+                    next_state: STATE_NUMBER, 
+                    emit_token: None  // 进入数字状态，继续收集
+                }
+            },
+            TransitionRule { 
+                pattern: Pattern::Char('"'), 
+                action: StateAction { 
+                    next_state: STATE_STRING, 
+                    emit_token: None  // 进入字符串状态
+                }
+            },
             // ... 更多规则
         ],
-        // 其他状态的规则
+        // STATE_NUMBER 的规则
+        vec![
+            TransitionRule { 
+                pattern: Pattern::CharClass(|c| c.is_ascii_digit() || c == '.'), 
+                action: StateAction { 
+                    next_state: STATE_NUMBER, 
+                    emit_token: None  // 继续收集数字字符
+                }
+            },
+            // 数字结束的规则（遇到非数字字符）
+            TransitionRule { 
+                pattern: Pattern::CharClass(|c| c.is_whitespace() || "()[]".contains(c)), 
+                action: StateAction { 
+                    next_state: STATE_INITIAL, 
+                    emit_token: Some(Box::new(emit_number))  // 生成数字Token
+                }
+            },
+        ],
+        // 其他状态的规则...
     ],
-    fallback_rules: vec![/* ... */],
+    fallback_rules: vec![
+        // STATE_INITIAL 的 fallback
+        StateAction { 
+            next_state: STATE_INITIAL, 
+            emit_token: Some(Box::new(|raw_text, position| {
+                Err(LexError::InvalidCharacter { 
+                    text: raw_text.to_string(), 
+                    position 
+                })
+            }))
+        },
+        // 其他状态的 fallback...
+    ],
 };
 ```
 
