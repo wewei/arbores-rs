@@ -1,6 +1,6 @@
 # 语法分析器设计
 
-状态：Draft-2
+状态：Reviewed
 
 ## 概述
 
@@ -20,57 +20,80 @@
 - **性能优化**：高效的递归下降解析
 - **函数式设计**：纯函数实现，避免在结构体上编码业务逻辑
 
+## 源代码结构
+
+语法分析器模块按照职责分离的原则组织，采用分层架构设计：
+
+```text
+/src/interpreter/parser/
+├── mod.rs        # 模块接口和公共 API
+├── types.rs      # 核心数据类型定义
+├── rules.rs      # 递归下降规则定义
+└── engine.rs     # 递归下降解析引擎
+```
+
+**模块职责说明**：
+
+- **`types.rs`**：定义语法分析器的核心数据结构
+  - `SExpr`, `SExprContent` - AST 节点类型
+  - `ParseError`, `ParseResult`, `ParseOutput` - 错误和结果类型
+  - `ParserState` - 内部解析状态管理
+  - 类型相关的辅助方法和特征实现
+
+- **`rules.rs`**：集中管理递归下降解析规则
+  - `parse_expression()` - 表达式解析的主入口
+  - `parse_list()`, `parse_dotted_list()` - 列表解析规则
+  - `parse_quoted_expression()` - 引用语法解析
+  - `parse_atom()`, `parse_vector()` - 原子和向量解析
+  - 各种验证和辅助解析函数
+
+- **`engine.rs`**：实现递归下降解析核心逻辑
+  - `ParserState` 状态管理和 Token 流操作
+  - `parse()` 主要 API 函数和解析流程控制
+  - 错误处理和恢复机制（MVP 阶段简化）
+  - 源代码重建和位置信息传递
+
+- **`mod.rs`**：模块对外接口
+  - 导出公共类型和函数
+  - `parse()` 主要 API 函数
+  - 模块级文档和使用示例
+
 ## 关键数据类型
 
 ### AST 核心数据结构
 
-#### SExpr - S表达式
+#### SExpr - 带源追踪的S表达式
 
-S表达式是Scheme语言的核心数据结构，表示所有可能的语法构造：
+S表达式是Scheme语言的核心数据结构，包含表达式内容和可选的源码位置信息：
 
 ```rust
-/// S表达式 - Scheme语言的核心数据结构
+/// S表达式 - 带源追踪的Scheme核心数据结构
 /// 使用 Rc 支持宏展开时的有向无环图结构
+#[derive(Debug, Clone)]
+pub struct SExpr {
+    /// S表达式的具体内容
+    pub content: SExprContent,
+    /// 源代码位置信息
+    pub span: Rc<Span>,
+}
+```
+
+#### SExprContent - S表达式内容
+
+S表达式的具体内容类型，表示所有可能的语法构造：
+
+```rust
+/// S表达式内容 - 表示所有可能的Scheme语法构造
 #[derive(Debug, Clone, PartialEq)]
-pub enum SExpr {
+pub enum SExprContent {
     /// 原子值（数字、字符串、布尔值、符号等）
     Atom(Value),
     /// 列表结构 (car . cdr)
-    Cons { car: Rc<SExprNode>, cdr: Rc<SExprNode> },
+    Cons { car: Rc<SExpr>, cdr: Rc<SExpr> },
     /// 空列表
     Nil,
     /// 向量（数组）
-    Vector(Vec<Rc<SExprNode>>),
-}
-```
-
-#### SExprNode - 带源追踪的S表达式
-
-结合S表达式和AST节点信息的互递归结构：
-
-```rust
-/// 带源追踪的S表达式节点
-#[derive(Debug, Clone)]
-pub struct SExprNode {
-    /// S表达式内容
-    pub expr: SExpr,
-    /// 对应的AST节点（用于源追踪）
-    pub ast_node: Option<Weak<ASTNode>>,
-}
-```
-
-#### ASTNode - AST节点
-
-AST节点包含一个S表达式和其在源代码中的位置信息：
-
-```rust
-/// AST节点 - 包含S表达式和位置信息
-#[derive(Debug, Clone)]
-pub struct ASTNode {
-    /// S表达式内容
-    pub expr: SExprNode,
-    /// 源代码位置范围
-    pub span: Span,
+    Vector(Vec<Rc<SExpr>>),
 }
 ```
 
@@ -131,11 +154,11 @@ pub enum DottedListError {
 
 ### ParseResult
 
-解析结果类型，只包含AST或错误信息：
+解析结果类型，包含解析得到的S表达式序列或错误信息：
 
 ```rust
-/// 解析结果类型 - 只包含AST或错误
-pub type ParseResult = Result<Vec<ASTNode>, ParseError>;
+/// 解析结果类型 - 包含S表达式序列或错误
+pub type ParseResult = Result<Vec<SExpr>, ParseError>;
 ```
 
 ### ParseOutput
@@ -158,7 +181,7 @@ pub struct ParseOutput {
 
 ### parse
 
-Parser的核心函数，从token流解析AST并重建源代码内容。
+Parser的核心函数，从token流解析S表达式并重建源代码内容。
 
 #### 参数列表
 | 参数名 | 类型 | 描述 |
@@ -171,23 +194,48 @@ Parser的核心函数，从token流解析AST并重建源代码内容。
 | `ParseOutput` | 包含解析结果和重建的源代码文本的结构体 |
 
 #### 说明
-- `result` 字段：成功时包含解析得到的AST节点序列，失败时包含解析错误
+- `result` 字段：成功时包含解析得到的S表达式序列，失败时包含解析错误
 - `source_text` 字段：从token流重建的源代码字符串（无论成功或失败都会包含已处理的部分）
 
 ## 关键设计问题
 
-### 问题：SExpr与ASTNode的关系设计和源追踪机制
+### 问题：SExpr的源追踪机制和位置信息传递
 
-`ASTNode` 会持有解析出来的 `SExpr`，而每一个 `SExpr`，无论是在编译期从源代码生成的 `SExpr`，还是在运行时计算出来的中间值，都可以用一个弱引用追溯回源代码。
+简化后的设计使用 `Rc<Span>` 来记录每个S表达式的源码位置：
 
-- 对于编译期生成的 `SExpr`，关联到持有它的 `ASTNode`
-- 对于运行时计算出的 `SExpr`，关联到计算出它的 `SExpr` 关联的 `ASTNode`。
+- 对于从源代码直接解析的S表达式，`span` 字段包含对应的源码位置信息
+- 对于运行时计算生成的S表达式，`span` 字段可以继承自计算它的表达式
+- 对于内置或系统生成的S表达式，`span` 字段使用空 span `Span::empty(n)`，`n` 是系统生成S表达式插入的位置
 
-例如 `(+ 1 2)` 对应的 `SExpr` 和 `ASTNode` 相互关联。计算出的结果 `3`，也关联到同一个 `ASTNode`。
+**位置信息继承规则**：
+```rust
+impl SExpr {
+    /// 创建带位置信息的S表达式
+    pub fn with_span(content: SExprContent, span: Span) -> Self {
+        Self {
+            content,
+            span: Rc::new(span),
+        }
+    }
+    
+    /// 创建不带位置信息的S表达式（用于运行时计算结果）
+    pub fn without_span(content: SExprContent) -> Self {
+        Self {
+            content,
+            span: Rc::new(Span::empty(0)), // 使用空span
+        }
+    }
+    
+    /// 继承位置信息创建新的S表达式
+    pub fn inherit_span(&self, content: SExprContent) -> Self {
+        Self {
+            content,
+            span: self.span.clone(),
+        }
+    }
+}
 
-### 问题：采用什么的语法分析算法？
-
-S-Expression 结构比较简单，应该可以采用递归下降算法。
+例如 `(+ 1 2)` 对应的 `SExpr` 包含整个表达式的 `span`。计算出的结果 `3` 可以继承同样的 `span`，用于错误追踪。
 
 ### 问题：点对列表语法的正确解析和边界情况处理
 
@@ -233,102 +281,53 @@ fn validate_dotted_list(elements: &[SExpr], dot_pos: usize, tail: &SExpr) -> Res
 
 **转换实现策略**：
 ```rust
-fn parse_quoted_expression(quote_token: Token, expr: SExprNode) -> SExprNode {
-    // 创建 quote 符号节点
-    let quote_symbol = SExprNode {
-        expr: SExpr::Atom(Value::Symbol("quote".to_string())),
-        ast_node: None, // 将在创建 AST 节点时设置
+fn parse_quoted_expression(quote_token: Token, expr_node: SExpr) -> SExpr {
+    // 创建 quote 符号 - 关联到 quote_token 的位置
+    let quote_symbol = SExpr::with_span(
+        SExprContent::Atom(Value::Symbol("quote".to_string())),
+        quote_token.span
+    );
+    
+    // 创建尾部 nil - 位置为 expr_node 结束位置的空span
+    let nil_span = Span::empty(expr_node.span.end);
+    let nil_node = SExpr {
+        content: SExprContent::Nil,
+        span: Rc::new(nil_span),
     };
     
-    // 创建尾部 nil 节点
-    let nil_node = SExprNode {
-        expr: SExpr::Nil,
-        ast_node: None, // 将在创建 AST 节点时设置
-    };
-    
-    // 构建内层列表：(expr)
-    let inner_cons = SExprNode {
-        expr: SExpr::Cons {
-            car: Rc::new(expr),
-            cdr: Rc::new(nil_node),
-        },
-        ast_node: None, // 将在创建 AST 节点时设置
-    };
-    
-    // 构建外层列表：(quote (expr))
-    let quoted_expr = SExprNode {
-        expr: SExpr::Cons {
-            car: Rc::new(quote_symbol),
-            cdr: Rc::new(inner_cons),
-        },
-        ast_node: None, // 将在上层函数中设置到对应的 ASTNode
-    };
-    
-    quoted_expr
-}
-
-fn create_ast_node_for_quote(quoted_expr: SExprNode, quote_span: Span) -> Rc<ASTNode> {
-    // 创建 AST 节点
-    let ast_node = Rc::new(ASTNode {
-        expr: quoted_expr.clone(),
-        span: quote_span,
+    // 构建内层 cons：(expr . ()) - 应该关联到 expr_node 的位置
+    let inner_cons = SExpr::inherit_span(&expr_node, SExprContent::Cons {
+        car: Rc::new(expr_node.clone()),
+        cdr: Rc::new(nil_node),
     });
     
-    // 建立 SExprNode 到 ASTNode 的弱引用
-    // 这里需要递归设置所有嵌套的 SExprNode 的 ast_node 字段
-    set_ast_node_recursive(&quoted_expr, &ast_node);
+    // 构建外层 cons：(quote . (expr . ())) - 关联到整个 'expr 表达式的位置
+    let full_span = Span::new(
+        quote_token.span.start, 
+        expr_node.span.end
+    );
     
-    ast_node
-}
-
-fn set_ast_node_recursive(sexpr_node: &SExprNode, ast_node: &Rc<ASTNode>) {
-    // 注意：这里需要使用内部可变性来修改 ast_node 字段
-    // 实际实现中可能需要使用 RefCell 或其他机制
-    match &sexpr_node.expr {
-        SExpr::Cons { car, cdr } => {
-            set_ast_node_recursive(car, ast_node);
-            set_ast_node_recursive(cdr, ast_node);
-        }
-        SExpr::Vector(elements) => {
-            for elem in elements {
-                set_ast_node_recursive(elem, ast_node);
-            }
-        }
-        _ => {} // Atom 和 Nil 不需要递归处理
-    }
+    SExpr::with_span(SExprContent::Cons {
+        car: Rc::new(quote_symbol),
+        cdr: Rc::new(inner_cons),
+    }, full_span)
 }
 ```
 
 **元数据保持原则**：
-1. **源位置追踪**：转换后的AST节点保持原始位置信息
+1. **源位置追踪**：转换后的S表达式保持原始位置信息
 2. **语法糖展开**：保留展开前后的对应关系
 3. **调试信息**：错误报告时显示原始语法形式
 
-**AST节点关联策略**：
-- **统一追踪**：所有由引用语法糖展开的S表达式都关联到同一个AST节点
-- **位置保持**：AST节点的`span`字段包含整个引用表达式的范围（从引用符号到被引用表达式结束）
-- **错误定位**：当展开后的表达式出错时，能够准确定位到原始的引用语法位置
-
-**完整的引用解析流程**：
-```rust
-fn parse_quote_syntax(state: &mut ParserState) -> Result<Rc<ASTNode>, ParseError> {
-    let quote_token = expect_token(state, TokenType::Quote)?; // 获取 ' token
-    let quoted_expr_node = parse_expression(state)?; // 解析被引用的表达式
-    
-    // 构建展开后的 (quote expr) 结构
-    let expanded_sexpr = parse_quoted_expression(quote_token.clone(), quoted_expr_node);
-    
-    // 创建包含完整位置信息的 AST 节点
-    let full_span = Span::new(
-        quote_token.start_pos(), 
-        expanded_sexpr.span.end_pos()
-    );
-    
-    let ast_node = create_ast_node_for_quote(expanded_sexpr, full_span);
-    
-    Ok(ast_node)
-}
-```
+**位置信息分配策略**：
+- **分层追踪**：
+  - 外层 cons `(quote . (expr . ()))` 关联到整个引用表达式的位置范围（从 `'` 到 `expr` 结束）
+  - 内层 cons `(expr . ())` 关联到被引用表达式的位置范围（与 `expr` 相同）
+  - `quote` 符号关联到引用符号的位置
+  - `expr` 保持其原始的位置关联
+  - 尾部 `nil` 关联到 `expr` 结束位置的空span（start == end == expr.end）
+- **位置保持**：每个 cons 结构的位置信息精确对应其在源代码中的语义范围
+- **错误定位**：当展开后的不同部分出错时，能够准确定位到对应的源代码位置
 
 ### 问题：递归下降解析的深度限制和栈溢出防护
 
@@ -372,11 +371,11 @@ fn parse_expression_with_depth_check(state: &mut ParserState) -> Result<SExpr, P
 
 **类型区分原则**：
 ```rust
-// 在SExpr中明确区分
-pub enum SExpr {
-    Cons { car: Rc<SExprNode>, cdr: Rc<SExprNode> }, // 列表
-    Vector(Vec<Rc<SExprNode>>),                       // 向量
-    Nil,                                              // 空列表（非空向量）
+// 在SExprContent中明确区分
+pub enum SExprContent {
+    Cons { car: Rc<SExpr>, cdr: Rc<SExpr> }, // 列表
+    Vector(Vec<Rc<SExpr>>),                   // 向量
+    Nil,                                      // 空列表（非空向量）
     // ...
 }
 ```
@@ -391,16 +390,16 @@ pub enum SExpr {
 ```rust
 trait Sequential {
     fn length(&self) -> usize;
-    fn get(&self, index: usize) -> Option<&SExprNode>;
-    fn iter(&self) -> Box<dyn Iterator<Item = &SExprNode>>;
+    fn get(&self, index: usize) -> Option<&SExpr>;
+    fn iter(&self) -> Box<dyn Iterator<Item = &SExpr>>;
 }
 
 impl Sequential for SExpr {
     fn length(&self) -> usize {
-        match self {
-            SExpr::Vector(vec) => vec.len(),
-            SExpr::Cons { .. } => self.list_length(),
-            SExpr::Nil => 0,
+        match &self.content {
+            SExprContent::Vector(vec) => vec.len(),
+            SExprContent::Cons { .. } => self.list_length(),
+            SExprContent::Nil => 0,
             _ => 0,
         }
     }
@@ -432,17 +431,15 @@ impl Sequential for SExpr {
 ### 基本列表解析流程
 
 ```rust
-fn parse_list(state: &mut ParserState) -> Result<SExprNode, ParseError> {
+fn parse_list(state: &mut ParserState) -> Result<SExpr, ParseError> {
     let start_token = expect_token(state, TokenType::LeftParen)?;
     let mut elements = Vec::new();
-    let mut source_parts = vec![start_token.raw_text.clone()];
     
     loop {
         // 检查列表结束
         if let Some(token) = peek_token(state) {
             if token.token_type == TokenType::RightParen {
                 let end_token = advance_token(state).unwrap();
-                source_parts.push(end_token.raw_text.clone());
                 break;
             }
         }
@@ -450,72 +447,57 @@ fn parse_list(state: &mut ParserState) -> Result<SExprNode, ParseError> {
         // 检查点对列表
         if let Some(token) = peek_token(state) {
             if token.token_type == TokenType::Dot {
-                return parse_dotted_list(state, elements, source_parts);
+                return parse_dotted_list(state, elements, start_token);
             }
         }
         
         // 解析下一个表达式
         let expr = parse_expression(state)?;
-        source_parts.push(expr.source_text());
         elements.push(expr);
     }
     
     // 构建列表SExpr
-    let list_sexpr = build_proper_list(elements);
-    let span = Span::new(start_token.start_pos(), state.last_token_end());
-    let source_text = source_parts.join("");
+    let list_content = build_proper_list(elements);
+    let span = Span::new(start_token.span.start, state.last_token_end());
     
-    Ok(SExprNode {
-        expr: list_sexpr,
-        ast_node: None, // 将在上层设置
-        span,
-        source_text,
-    })
+    Ok(SExpr::with_span(list_content, span))
 }
 
-fn build_proper_list(elements: Vec<SExprNode>) -> SExpr {
-    elements.into_iter().rev().fold(SExpr::Nil, |acc, elem| {
-        SExpr::Cons {
+fn build_proper_list(elements: Vec<SExpr>) -> SExprContent {
+    elements.into_iter().rev().fold(SExprContent::Nil, |acc, elem| {
+        // 为尾部创建正确的 nil span（在当前元素的结尾位置）
+        let nil_span = Span::empty(elem.span.end);
+        let cdr_node = if matches!(acc, SExprContent::Nil) {
+            SExpr {
+                content: acc,
+                span: Rc::new(nil_span),
+            }
+        } else {
+            SExpr::without_span(acc)
+        };
+        
+        SExprContent::Cons {
             car: Rc::new(elem),
-            cdr: Rc::new(SExprNode {
-                expr: acc,
-                ast_node: None,
-                span: Span::default(),
-                source_text: String::new(),
-            }),
+            cdr: Rc::new(cdr_node),
         }
     })
 }
 ```
 
-### 源码追踪和AST构建
+### 源码追踪和解析流程
 
 ```rust
-fn create_ast_node(expr_node: SExprNode) -> Rc<ASTNode> {
-    let ast_node = Rc::new(ASTNode {
-        expr: expr_node.clone(),
-        span: expr_node.span,
-    });
-    
-    // 建立双向弱引用关系
-    if let Some(sexpr_node) = &expr_node.expr {
-        sexpr_node.ast_node = Some(Rc::downgrade(&ast_node));
-    }
-    
-    ast_node
-}
-
 fn parse_with_source_tracking(tokens: Vec<Token>) -> ParseOutput {
     let mut state = ParserState::new(tokens);
-    let mut ast_nodes = Vec::new();
+    let mut sexpr_nodes = Vec::new();
     let mut source_buffer = String::new();
     
     while !is_at_end(&state) {
         match parse_expression(&mut state) {
-            Ok(expr_node) => {
-                source_buffer.push_str(&expr_node.source_text());
-                let ast_node = create_ast_node(expr_node);
-                ast_nodes.push((*ast_node).clone());
+            Ok(sexpr) => {
+                // 从token重建源代码文本
+                source_buffer.push_str(&reconstruct_source_text(&sexpr));
+                sexpr_nodes.push(sexpr);
             }
             Err(error) => {
                 return ParseOutput {
@@ -527,8 +509,29 @@ fn parse_with_source_tracking(tokens: Vec<Token>) -> ParseOutput {
     }
     
     ParseOutput {
-        result: Ok(ast_nodes),
+        result: Ok(sexpr_nodes),
         source_text: source_buffer,
+    }
+}
+
+fn reconstruct_source_text(sexpr: &SExpr) -> String {
+    // 基于span信息和token内容重建源代码文本
+    // 实际实现中可能需要维护token到源文本的映射
+    match &sexpr.content {
+        SExprContent::Atom(value) => value.to_string(),
+        SExprContent::Cons { car, cdr } => {
+            format!("({} . {})", 
+                reconstruct_source_text(car), 
+                reconstruct_source_text(cdr))
+        }
+        SExprContent::Nil => "()".to_string(),
+        SExprContent::Vector(elements) => {
+            let inner = elements.iter()
+                .map(|e| reconstruct_source_text(e))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("#({})", inner)
+        }
     }
 }
 ```
@@ -549,8 +552,8 @@ fn handle_unexpected_token(
 
 fn validate_dotted_list_syntax(
     dot_token: &Token,
-    elements_before_dot: &[SExprNode],
-    tail_expr: Option<&SExprNode>
+    elements_before_dot: &[SExpr],
+    tail_expr: Option<&SExpr>
 ) -> Result<(), ParseError> {
     if elements_before_dot.is_empty() {
         return Err(ParseError::UnexpectedToken {
@@ -575,4 +578,3 @@ fn validate_dotted_list_syntax(
     Ok(())
 }
 ```
-

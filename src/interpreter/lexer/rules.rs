@@ -4,7 +4,7 @@
 //! 遵循函数式设计原则，所有生成器都是纯函数。
 
 use crate::interpreter::lexer::types::{
-    Token, TokenType, LexError, LexErrorReason, Position, Pattern, StateAction, TransitionRule, StateMachine
+    Token, TokenType, LexError, LexErrorReason, Pattern, StateAction, TransitionRule, StateMachine
 };
 
 // ============================================================================
@@ -25,7 +25,7 @@ pub const STATE_CHARACTER: usize = 7;
 // ============================================================================
 
 /// 生成数字 Token
-pub fn emit_number(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_number(raw_text: &str, position: usize) -> Result<Token, LexError> {
     match raw_text.parse::<f64>() {
         Ok(value) => Ok(Token::from_text(
             TokenType::Number(value),
@@ -43,7 +43,7 @@ pub fn emit_number(raw_text: &str, position: Position) -> Result<Token, LexError
 }
 
 /// 生成字符串 Token
-pub fn emit_string(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_string(raw_text: &str, position: usize) -> Result<Token, LexError> {
     // 去掉首尾的引号
     if raw_text.len() < 2 || !raw_text.starts_with('"') || !raw_text.ends_with('"') {
         return Err(LexError::new(
@@ -66,7 +66,7 @@ pub fn emit_string(raw_text: &str, position: Position) -> Result<Token, LexError
 }
 
 /// 生成符号 Token
-pub fn emit_symbol(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_symbol(raw_text: &str, position: usize) -> Result<Token, LexError> {
     // 检查是否为布尔值
     match raw_text {
         "#t" | "#true" => Ok(Token::from_text(
@@ -88,7 +88,7 @@ pub fn emit_symbol(raw_text: &str, position: Position) -> Result<Token, LexError
 }
 
 /// 生成注释 Token
-pub fn emit_comment(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_comment(raw_text: &str, position: usize) -> Result<Token, LexError> {
     // 去掉开头的分号
     let content = raw_text.strip_prefix(';').unwrap_or(raw_text);
     
@@ -100,7 +100,7 @@ pub fn emit_comment(raw_text: &str, position: Position) -> Result<Token, LexErro
 }
 
 /// 生成空白字符 Token
-pub fn emit_whitespace(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_whitespace(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(
         TokenType::Whitespace(raw_text.to_string()),
         raw_text,
@@ -109,57 +109,57 @@ pub fn emit_whitespace(raw_text: &str, position: Position) -> Result<Token, LexE
 }
 
 /// 生成换行符 Token
-pub fn emit_newline(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_newline(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::Newline, raw_text, position))
 }
 
 /// 生成左括号 Token
-pub fn emit_left_paren(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_left_paren(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::LeftParen, raw_text, position))
 }
 
 /// 生成右括号 Token
-pub fn emit_right_paren(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_right_paren(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::RightParen, raw_text, position))
 }
 
 /// 生成左方括号 Token
-pub fn emit_left_bracket(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_left_bracket(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::LeftBracket, raw_text, position))
 }
 
 /// 生成右方括号 Token
-pub fn emit_right_bracket(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_right_bracket(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::RightBracket, raw_text, position))
 }
 
 /// 生成引号 Token
-pub fn emit_quote(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_quote(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::Quote, raw_text, position))
 }
 
 /// 生成反引号 Token
-pub fn emit_quasiquote(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_quasiquote(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::Quasiquote, raw_text, position))
 }
 
 /// 生成逗号反引号 Token
-pub fn emit_unquote_splicing(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_unquote_splicing(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::UnquoteSplicing, raw_text, position))
 }
 
 /// 生成逗号 Token
-pub fn emit_unquote(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_unquote(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::Unquote, raw_text, position))
 }
 
 /// 生成点号 Token
-pub fn emit_dot(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_dot(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::Dot, raw_text, position))
 }
 
 /// 生成字符 Token
-pub fn emit_character(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_character(raw_text: &str, position: usize) -> Result<Token, LexError> {
     // 字符字面量格式：#\字符 或 #\字符名
     if !raw_text.starts_with("#\\") {
         return Err(LexError::new(
@@ -191,12 +191,12 @@ pub fn emit_character(raw_text: &str, position: Position) -> Result<Token, LexEr
 }
 
 /// 生成文件结束 Token
-pub fn emit_eof(_raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_eof(_raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::Eof, "", position))
 }
 
 /// 生成错误 Token
-pub fn emit_error(raw_text: &str, position: Position) -> Result<Token, LexError> {
+pub fn emit_error(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Err(LexError::new(
         position,
         raw_text.chars().next(),
@@ -209,7 +209,7 @@ pub fn emit_error(raw_text: &str, position: Position) -> Result<Token, LexError>
 // ============================================================================
 
 /// 处理字符串中的转义序列
-fn process_string_escapes(content: &str, position: Position) -> Result<String, LexError> {
+fn process_string_escapes(content: &str, position: usize) -> Result<String, LexError> {
     let mut result = String::new();
     let mut chars = content.chars();
     
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_emit_number() {
-        let pos = Position::start();
+        let pos = 0;
         
         let result = emit_number("42", pos).unwrap();
         assert_eq!(result.token_type, TokenType::Number(42.0));
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_emit_string() {
-        let pos = Position::start();
+        let pos = 0;
         
         let result = emit_string("\"hello\"", pos).unwrap();
         assert_eq!(result.token_type, TokenType::String("hello".to_string()));
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_emit_symbol() {
-        let pos = Position::start();
+        let pos = 0;
         
         let result = emit_symbol("symbol", pos).unwrap();
         assert_eq!(result.token_type, TokenType::Symbol("symbol".to_string()));
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn test_process_string_escapes() {
-        let pos = Position::start();
+        let pos = 0;
         
         let result = process_string_escapes("hello", pos).unwrap();
         assert_eq!(result, "hello");

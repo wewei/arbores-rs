@@ -1,6 +1,6 @@
 # 词法分析器设计
 
-状态：Draft-2
+状态：Reviewed
 
 ## 概述
 
@@ -129,19 +129,15 @@ impl Token {
     }
     
     /// 从文本和起始位置创建Token
-    pub fn from_text(token_type: TokenType, text: &str, start: Position) -> Self {
-        let span = Span::from_text(text, start);
+    pub fn from_text(token_type: TokenType, text: &str, start: usize) -> Self {
+        let char_count = text.chars().count();
+        let span = Span::from_char_range(start, char_count);
         Self::new(token_type, span, text.to_string())
     }
     
-    /// 获取Token的起始位置
-    pub fn start_pos(&self) -> Position {
-        self.span.start
-    }
-    
-    /// 获取Token的结束位置
-    pub fn end_pos(&self) -> Position {
-        self.span.end
+    /// 获取Token的长度（字符数）
+    pub fn len(&self) -> usize {
+        self.span.len()
     }
 }
 ```
@@ -154,8 +150,8 @@ impl Token {
 /// 词法分析错误 - 统一的错误结构
 #[derive(Debug, Clone, PartialEq)]
 pub struct LexError {
-    /// 出问题的位置
-    pub position: Position,
+    /// 出问题的位置（字符偏移量）
+    pub position: usize,
     /// 导致错误的字符
     pub found_char: Option<char>,  // None 表示EOF
     /// 错误的具体原因
@@ -184,7 +180,7 @@ pub enum LexErrorReason {
 impl LexError {
     /// 创建新的词法错误
     pub fn new(
-        position: Position, 
+        position: usize, 
         found_char: Option<char>, 
         reason: LexErrorReason,
         remaining_chars: Box<dyn Iterator<Item = char>>
@@ -199,15 +195,21 @@ impl LexError {
             None => "EOF".to_string(),
         }
     }
+    
+    /// 获取错误位置
+    pub fn position(&self) -> usize {
+        self.position
+    }
 }
 ```
 
 ### Position
 
-位置信息设计：
+位置信息设计（已弃用，使用字符偏移量代替）：
 
 ```rust
-/// Token 位置信息 - 存储在 Token 中
+/// Token 位置信息 - 已弃用，使用 usize 字符偏移量代替
+/// 保留此定义仅用于向后兼容和转换目的
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Position {
     pub line: usize,
@@ -235,37 +237,60 @@ impl Position {
 
 ### Span
 
-位置范围信息，可与Parser的ASTNode公用：
+位置范围信息，基于字符偏移量的左闭右开区间设计：
 
 ```rust
-/// 源码位置范围 - 包含起始和结束位置
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// 源码位置范围 - 基于字符偏移量的左闭右开区间 [start, end)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
-    pub start: Position,
-    pub end: Position,
+    /// 起始位置（字符偏移量，包含）
+    pub start: usize,
+    /// 结束位置（字符偏移量，不包含）
+    pub end: usize,
 }
 
 impl Span {
-    /// 创建新的Span
-    pub fn new(start: Position, end: Position) -> Self {
+    /// 创建新的 Span
+    pub fn new(start: usize, end: usize) -> Self {
+        debug_assert!(start <= end, "Span start must be <= end");
         Self { start, end }
     }
     
-    /// 从文本和起始位置创建Span
-    pub fn from_text(text: &str, start: Position) -> Self {
-        let end = start.advance_by_text(text);
-        Self { start, end }
+    /// 创建单个字符位置的 Span
+    pub fn single_char(position: usize) -> Self {
+        Self::new(position, position + 1)
     }
     
-    /// 获取Span的长度（字节数）
+    /// 创建空 Span（零长度区间）
+    pub fn empty(position: usize) -> Self {
+        Self::new(position, position)
+    }
+    
+    /// 从文本长度和起始位置创建 Span
+    pub fn from_char_range(start: usize, char_count: usize) -> Self {
+        Self::new(start, start + char_count)
+    }
+    
+    /// 获取 Span 的长度（字符数）
     pub fn len(&self) -> usize {
-        self.end.byte_offset - self.start.byte_offset
+        self.end - self.start
     }
     
-    /// 判断Span是否为空
+    /// 判断 Span 是否为空
     pub fn is_empty(&self) -> bool {
-        self.start.byte_offset == self.end.byte_offset
+        self.start == self.end
     }
+    
+    /// 获取起始位置
+    pub fn start(&self) -> usize {
+        self.start
+    }
+    
+    /// 获取结束位置
+    pub fn end(&self) -> usize {
+        self.end
+    }
+}
 }
 
 ### 辅助类型方法
@@ -325,7 +350,7 @@ struct StateAction {
     emit_token: Option<TokenEmitter>,   // 可选的 Token 生成器
 }
 
-type TokenEmitter = Box<dyn Fn(&str, Position) -> Result<Token, LexError>>;
+type TokenEmitter = Box<dyn Fn(&str, usize) -> Result<Token, LexError>>;
 
 /// 状态机规则集：状态 -> 转移规则列表
 struct StateMachine {
@@ -339,7 +364,7 @@ struct StateMachine {
 /// 内部词法分析器状态 - 实现细节，不暴露给用户
 struct LexerState<I: Iterator<Item = char>> {
     chars: Peekable<I>,                 // 字符流，支持前瞻
-    current_pos: Position,              // 当前位置信息
+    current_pos: usize,                 // 当前字符偏移量位置
     state: usize,                       // 当前状态机状态
     buffer: String,                     // 缓冲的字符串
     state_machine: &'static StateMachine, // 状态机规则集
@@ -369,7 +394,7 @@ struct LexerState<I: Iterator<Item = char>> {
 // 内部实现函数 - 不暴露给用户
 fn peek_char<I>(stream: &mut CharStream<I>) -> Option<&char>
 fn advance_char<I>(stream: &mut CharStream<I>) -> Option<char>
-fn advance_position(pos: &mut Position, ch: char)
+fn advance_position(pos: &mut usize, ch: char)
 fn match_pattern<I>(stream: &mut CharStream<I>, pattern: &Pattern) -> MatchResult
 ```
 
@@ -394,10 +419,10 @@ fn apply_fallback<I>(
 **Token 生成器集合**：
 ```rust
 // TokenEmitter 函数的具体实现
-fn emit_number(raw_text: &str, position: Position) -> Result<Token, LexError>
-fn emit_string(raw_text: &str, position: Position) -> Result<Token, LexError>
-fn emit_symbol(raw_text: &str, position: Position) -> Result<Token, LexError>
-fn emit_comment(raw_text: &str, position: Position) -> Result<Token, LexError>
+fn emit_number(raw_text: &str, position: usize) -> Result<Token, LexError>
+fn emit_string(raw_text: &str, position: usize) -> Result<Token, LexError>
+fn emit_symbol(raw_text: &str, position: usize) -> Result<Token, LexError>
+fn emit_comment(raw_text: &str, position: usize) -> Result<Token, LexError>
 ```
 
 **状态机定义**：
@@ -422,7 +447,7 @@ static SCHEME_STATE_MACHINE: StateMachine = StateMachine {
                     emit_token: Some(Box::new(|raw_text, position| {
                         Ok(Token {
                             token_type: TokenType::LeftParen,
-                            position,
+                            span: Span::from_char_range(position, 1),
                             raw_text: raw_text.to_string(),
                         })
                     }))
@@ -469,10 +494,12 @@ static SCHEME_STATE_MACHINE: StateMachine = StateMachine {
         StateAction { 
             next_state: STATE_INITIAL, 
             emit_token: Some(Box::new(|raw_text, position| {
-                Err(LexError::InvalidCharacter { 
-                    text: raw_text.to_string(), 
-                    position 
-                })
+                Err(LexError::new(
+                    position,
+                    raw_text.chars().next(),
+                    LexErrorReason::InvalidCharacter,
+                    Box::new(std::iter::empty())
+                ))
             }))
         },
         // 其他状态的 fallback...
@@ -502,15 +529,22 @@ MVP 暂不考虑
 
 ### 问题：位置信息跟踪的性能开销优化
 
-**存储策略优化**：
-- Token 只存储起始 `Position` 和 `raw_text`
-- `Span` 通过计算得出，避免存储冗余
-- 避免通过累计前序 Token 计算位置的 O(n) 开销
+**新的简化策略**：
+- 使用字符偏移量 `usize` 作为唯一的位置标识
+- Token 存储起始位置和原始文本，结束位置通过计算得出
+- Span 计算简单：`Span::new(start, start + char_count)`
+- 避免了复杂的行列计算和 Unicode 字符处理
 
-**位置计算权衡**：
-- 存储 vs 计算：存储起始位置，按需计算范围
-- 内存使用 vs 计算复杂度：优先减少存储开销
-- Unicode 字符处理：正确处理多字节字符的位置推进
+**性能优势**：
+- 位置推进：O(1) 操作，简单的整数加法
+- 位置比较：直接的整数比较
+- 内存占用：每个位置只需一个 `usize`
+- 无需处理换行符、制表符等特殊字符的位置计算
+
+**按需转换策略**：
+- 内部使用字符偏移量进行所有计算
+- 错误报告时使用 `PositionConverter` 转换为行列信息
+- 避免存储冗余的位置信息，减少内存开销
 
 
 

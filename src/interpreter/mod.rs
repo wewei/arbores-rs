@@ -5,4 +5,4 @@
 pub mod lexer;
 
 // 重新导出词法分析器的主要接口
-pub use lexer::{tokenize, tokenize_string, Token, TokenType, LexError, Position};
+pub use lexer::{tokenize, tokenize_string, Token, TokenType, LexError};
