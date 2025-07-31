@@ -138,36 +138,12 @@ impl TokenType {
 #### 参数列表
 | 参数名 | 类型 | 描述 |
 |--------|------|------|
-| input | `&str` | 源代码字符串 |
+| chars | `I: Iterator<Item = char>` | 字符迭代器，可以是任何产生字符的迭代器 |
 
 #### 返回值
 | 类型 | 描述 |
 |------|------|
-| `Vec<Result<Token, LexError>>` | Token 列表，每个元素可能是成功的 Token 或错误 |
-
-### tokenize_with_trivia
-
-#### 参数列表
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| input | `&str` | 源代码字符串 |
-
-#### 返回值
-| 类型 | 描述 |
-|------|------|
-| `Vec<Result<Token, LexError>>` | 包含 Trivia Tokens 的完整 Token 列表 |
-
-### tokenize_reader
-
-#### 参数列表
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| reader | `R: Read` | 实现 Read trait 的输入源 |
-
-#### 返回值
-| 类型 | 描述 |
-|------|------|
-| `Result<Vec<Token>, Vec<LexError>>` | 成功时返回 Token 列表，失败时返回错误列表 |
+| `impl Iterator<Item = Result<Token, LexError>>` | Token 迭代器，每个元素可能是成功的 Token 或错误 |
 
 ## 关键设计问题
 
@@ -175,23 +151,28 @@ impl TokenType {
 
 词法分析器的接口设计需要在简洁性和灵活性之间权衡：
 
-**泛型接口方案**：
+**采用的泛型接口方案**：
 ```rust
 pub fn tokenize<I>(chars: I) -> impl Iterator<Item = Result<Token, LexError>>
 where I: Iterator<Item = char>
 ```
 
-**具体类型接口方案**：
+**替代的具体类型接口方案**：
 ```rust
 pub fn tokenize(input: &str) -> Vec<Result<Token, LexError>>
 pub fn tokenize_reader<R: Read>(reader: R) -> Result<Vec<Token>, Vec<LexError>>
 ```
 
-**关键权衡**：
-- API 复杂度 vs 使用灵活性
-- 编译时开销 vs 运行时性能
-- 学习成本 vs 组合能力
-- 错误信息清晰度 vs 抽象程度
+**选择泛型接口的理由**：
+- 支持任意字符迭代器输入（`&str::chars()`, `BufReader` 等）
+- 惰性求值，支持流式处理大文件
+- 零成本抽象，编译时优化
+- 函数式设计，便于组合和链式操作
+
+**便捷函数处理策略**：
+- 核心接口保持泛型设计的纯净性
+- 便捷函数（如 `tokenize_string`, `tokenize_with_trivia`）作为独立模块提供
+- 用户可根据需要选择合适的抽象层次
 
 TODO
 
