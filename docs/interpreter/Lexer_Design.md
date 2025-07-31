@@ -25,7 +25,7 @@
 
 ### TokenType
 
-使用代数数据类型表示不同的 Token 变体：
+使用代数数据类型表示不同的 Token 变体，包含 Trivia Tokens 以支持程序原貌还原：
 
 ```rust
 /// 词法单元类型 - 使用 enum 表示不同的 Token 类型
@@ -53,6 +53,11 @@ pub enum TokenType {
     UnquoteSplicing, // ,@
     Dot,            // .
     
+    // Trivia Tokens (用于还原程序原貌)
+    Whitespace(String),     // 空格、制表符等
+    Newline,               // 换行符
+    Comment(String),       // 注释内容
+    
     // 控制符号
     Eof,
 }
@@ -72,21 +77,35 @@ pub struct Token {
 }
 ```
 
-### LexerState
+## 核心接口
 
-词法分析器的状态数据，不包含方法：
+### 主要词法分析函数
+
+词法分析器本质上是一个从字符迭代器到 Token 迭代器的转换函数：
 
 ```rust
-/// 词法分析器状态 - 纯数据结构
-pub struct LexerState<R: Read> {
-    /// 输入流
-    pub reader: PeekableReader<R>,
-    /// 当前位置
-    pub current_pos: Position,
-    /// 当前字节偏移
-    pub byte_offset: usize,
-    /// 错误收集器
-    pub errors: Vec<LexError>,
+/// 核心词法分析函数：将字符流转换为 Token 流
+/// 函数式设计：Iterator<char> -> Iterator<Token>
+pub fn tokenize<I>(chars: I) -> impl Iterator<Item = Result<Token, LexError>>
+where
+    I: Iterator<Item = char>,
+{
+    // 内部实现细节隐藏在函数内部
+}
+
+/// 便利函数：直接从字符串进行词法分析
+pub fn tokenize_string(input: &str) -> Vec<Result<Token, LexError>> {
+    tokenize(input.chars()).collect()
+}
+
+/// 过滤 Trivia Tokens 的便利函数
+pub fn tokenize_non_trivia<I>(chars: I) -> impl Iterator<Item = Result<Token, LexError>>
+where
+    I: Iterator<Item = char>,
+{
+    tokenize(chars).filter(|result| {
+        matches!(result, Ok(token) if !token.token_type.is_trivia())
+    })
 }
 ```
 
@@ -107,146 +126,115 @@ pub enum LexError {
 }
 ```
 
-## 关键功能函数接口
+### 辅助类型和函数
 
-### 状态构造函数
+```rust
+/// 判断 Token 是否为 Trivia（用于过滤）
+impl TokenType {
+    pub fn is_trivia(&self) -> bool {
+        matches!(self, 
+            TokenType::Whitespace(_) | 
+            TokenType::Newline | 
+            TokenType::Comment(_)
+        )
+    }
+}
 
-#### new_lexer_state
+/// 位置和范围信息
+#[derive(Debug, Clone, PartialEq)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+}
 
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| reader | R | 实现了 Read trait 的输入源 |
-
-| 类型 | 描述 |
-|------|------|
-| `LexerState<R>` | 新创建的词法分析器状态 |
-
-### 核心词法分析函数
-
-#### next_token
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态的可变引用 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Token, LexError>` | 下一个 Token 或错误 |
-
-#### tokenize_all
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| input | `&str` | 源代码字符串 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Vec<Token>, Vec<LexError>>` | 所有 Token 或错误列表 |
-
-### 特定类型解析函数
-
-#### parse_number
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-| start_char | `char` | 数字的起始字符 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Token, LexError>` | 数字 Token 或错误 |
-
-#### parse_string
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Token, LexError>` | 字符串 Token 或错误 |
-
-#### parse_symbol
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-| start_char | `char` | 符号的起始字符 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Token, LexError>` | 符号 Token 或错误 |
-
-#### parse_character
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Token, LexError>` | 字符 Token 或错误 |
-
-### 辅助功能函数
-
-#### advance_position
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-| ch | `char` | 当前字符 |
-
-| 类型 | 描述 |
-|------|------|
-| `()` | 无返回值，更新位置信息 |
-
-#### peek_char
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Option<char>, LexError>` | 下一个字符或错误 |
-
-#### skip_whitespace
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<(), LexError>` | 成功或错误 |
-
-### 错误处理函数
-
-#### recover_from_error
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut LexerState<R>` | 词法分析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<(), LexError>` | 恢复结果 |
-
-#### collect_errors
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&LexerState<R>` | 词法分析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `&[LexError]` | 当前收集的所有错误 |
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize,
+    pub byte_offset: usize,
+}
+```
 
 ## 关键设计问题
 
+### 问题：内部状态管理和迭代器实现策略
+
+词法分析器的内部实现需要维护状态来跟踪位置信息、缓冲字符和错误恢复。主要考虑：
+
+**状态结构设计**：
+```rust
+/// 内部词法分析器状态 - 实现细节，不暴露给用户
+struct LexerState<I: Iterator<Item = char>> {
+    chars: Peekable<I>,
+    current_pos: Position,
+    errors: Vec<LexError>,
+    peeked_tokens: VecDeque<Token>, // 用于 lookahead
+}
+```
+
+**迭代器适配器实现**：
+- 使用 `Peekable<Iterator<char>>` 支持字符前瞻
+- 状态机驱动的 Token 识别逻辑
+- 错误恢复时的同步点选择策略
+
+**关键权衡**：
+- 内存效率 vs 前瞻能力
+- 错误恢复粒度 vs 性能开销
+- 流式处理 vs 随机访问能力
+
+### 问题：状态操作函数的内部组织
+
+内部实现需要的辅助函数应该如何组织：
+
+**字符流操作**：
+```rust
+// 内部实现函数 - 不暴露给用户
+fn advance_char(state: &mut LexerState<I>) -> Option<char>
+fn peek_char(state: &LexerState<I>) -> Option<char>
+fn skip_whitespace(state: &mut LexerState<I>)
+fn advance_position(pos: &mut Position, ch: char)
+```
+
+**Token 解析函数**：
+```rust
+fn parse_number(state: &mut LexerState<I>, start_char: char) -> Result<Token, LexError>
+fn parse_string(state: &mut LexerState<I>) -> Result<Token, LexError>
+fn parse_symbol(state: &mut LexerState<I>, start_char: char) -> Result<Token, LexError>
+fn parse_comment(state: &mut LexerState<I>) -> Result<Token, LexError>
+```
+
+**组织策略**：
+- 按功能分组到子模块
+- 使用特征对象实现可插拔解析器
+- 函数组合vs面向对象设计
+
 ### 问题：数值解析的精度和类型统一处理
 
-TODO
+Scheme 支持多种数值类型（整数、有理数、实数、复数），需要统一的解析策略：
+
+**类型层次设计**：
+- 是否在词法层面区分不同数值类型
+- 精度损失的处理策略
+- 科学计数法和特殊数值的支持
+
+**解析策略**：
+- 状态机 vs 正则表达式
+- 错误恢复的边界处理
+- Unicode 数字字符的支持
+
+### 问题：Trivia Tokens 的处理策略和性能影响
+
+包含 Trivia Tokens 会增加 Token 流的大小，需要考虑：
+
+**存储策略**：
+- 是否总是生成 Trivia Tokens
+- 按需生成 vs 后置过滤
+- 内存使用优化
+
+**使用场景**：
+- 代码格式化工具的需求
+- 语法高亮的支持
+- 调试信息的完整性
 
 ### 问题：Unicode 符号的高效处理和验证策略
 
