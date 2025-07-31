@@ -161,72 +161,132 @@ impl TokenType {
 
 ### 问题：内部状态管理和迭代器实现策略
 
-词法分析器采用迭代器适配器模式，内部维护必要的状态来跟踪位置信息和支持字符前瞻：
+词法分析器采用状态机驱动的迭代器适配器模式，使用规则化的状态转移和 Token 生成：
 
-**状态结构设计**：
+**状态机规则结构设计**：
 ```rust
-/// 内部词法分析器状态 - 实现细节，不暴露给用户
-struct LexerState<I: Iterator<Item = char>> {
-    chars: Peekable<I>,
-    current_pos: Position,
+/// 状态机转移规则
+struct TransitionRule {
+    pattern: Pattern,                    // 匹配模式（正则表达式或字符串常量）
+    action: StateAction,                 // 状态转移动作
+}
+
+enum Pattern {
+    Char(char),                         // 单字符匹配
+    String(&'static str),               // 字符串常量匹配
+    Regex(&'static str),                // 正则表达式匹配
+    CharClass(fn(char) -> bool),        // 字符类匹配（如数字、字母）
+}
+
+struct StateAction {
+    next_state: usize,                  // 转移到的新状态
+    emit_token: Option<TokenEmitter>,   // 可选的 Token 生成器
+}
+
+type TokenEmitter = Box<dyn Fn(&str, Position) -> Result<Token, LexError>>;
+
+/// 状态机规则集：状态 -> 转移规则列表
+struct StateMachine {
+    rules: Vec<Vec<TransitionRule>>,    // rules[state_id] = 该状态的规则列表
+    fallback_rules: Vec<StateAction>,   // 每个状态的失配处理规则
 }
 ```
 
-**简化设计理念**：
-- 移除错误收集器：错误通过 Iterator<Result<Token, LexError>> 直接返回
-- 移除 Token 缓冲：不需要前瞻 Token，只需要字符前瞻
-- 简化状态：只保留位置跟踪和字符流状态
+**内部状态结构设计**：
+```rust
+/// 内部词法分析器状态 - 实现细节，不暴露给用户
+struct LexerState<I: Iterator<Item = char>> {
+    chars: Peekable<I>,                 // 字符流，支持前瞻
+    current_pos: Position,              // 当前位置信息
+    state: usize,                       // 当前状态机状态
+    buffer: String,                     // 缓冲的字符串
+    state_machine: &'static StateMachine, // 状态机规则集
+}
+```
 
-**迭代器实现策略**：
-- 使用 `Peekable<Iterator<char>>` 支持单字符前瞻
-- 状态机驱动的 Token 识别逻辑
-- 每次 `next()` 调用产生一个 `Result<Token, LexError>`
-- MVP 不做错误恢复，遇到错误直接返回
+**迭代器执行逻辑**：
+1. 获取当前状态对应的规则列表
+2. 按顺序匹配规则，找到第一个能与 `Peekable<char>` 匹配的规则
+3. 执行状态转移：更新状态、推进字符流、更新缓冲区
+4. 如果规则包含 `emit_token`，则生成 Token 并返回
+5. 否则继续迭代到下一个字符
+6. 如果所有规则都不匹配，执行 fallback 规则
 
-**关键权衡**：
-- 简洁性优先：减少内部状态复杂度
-- 流式处理：支持大文件的逐步解析
-- 内存效率：避免不必要的缓冲和状态
+**关键优势**：
+- **可扩展性**：新增 Token 类型只需添加规则，无需修改核心逻辑
+- **可读性**：状态转移规则清晰明确，易于理解和维护
+- **性能**：规则按优先级排序，支持快速匹配
+- **错误处理**：fallback 规则统一处理异常情况
 
 ### 问题：状态操作函数的内部组织
 
-内部实现需要的辅助函数应该如何组织：
+基于状态机驱动的设计，内部函数按照职责分层组织：
 
-**字符流操作**：
+**字符流操作层**：
 ```rust
 // 内部实现函数 - 不暴露给用户
-fn advance_char(state: &mut LexerState<I>) -> Option<char>
-fn peek_char(state: &LexerState<I>) -> Option<char>
-fn skip_whitespace(state: &mut LexerState<I>)
+fn peek_char<I>(state: &LexerState<I>) -> Option<char>
+fn advance_char<I>(state: &mut LexerState<I>) -> Option<char>
 fn advance_position(pos: &mut Position, ch: char)
+fn match_pattern<I>(state: &LexerState<I>, pattern: &Pattern) -> bool
 ```
 
-**Token 解析函数**：
+**状态机执行层**：
 ```rust
-fn parse_number(state: &mut LexerState<I>, start_char: char) -> Result<Token, LexError>
-fn parse_string(state: &mut LexerState<I>) -> Result<Token, LexError>
-fn parse_symbol(state: &mut LexerState<I>, start_char: char) -> Result<Token, LexError>
-fn parse_comment(state: &mut LexerState<I>) -> Result<Token, LexError>
+fn execute_transition<I>(
+    state: &mut LexerState<I>, 
+    rule: &TransitionRule
+) -> Option<Result<Token, LexError>>
+
+fn find_matching_rule<I>(
+    state: &LexerState<I>, 
+    rules: &[TransitionRule]
+) -> Option<&TransitionRule>
+
+fn apply_fallback<I>(
+    state: &mut LexerState<I>, 
+    fallback: &StateAction
+) -> Option<Result<Token, LexError>>
+```
+
+**Token 生成器集合**：
+```rust
+// TokenEmitter 函数的具体实现
+fn emit_number(raw_text: &str, position: Position) -> Result<Token, LexError>
+fn emit_string(raw_text: &str, position: Position) -> Result<Token, LexError>
+fn emit_symbol(raw_text: &str, position: Position) -> Result<Token, LexError>
+fn emit_comment(raw_text: &str, position: Position) -> Result<Token, LexError>
+```
+
+**状态机定义**：
+```rust
+// 预定义的状态机规则集
+static SCHEME_STATE_MACHINE: StateMachine = StateMachine {
+    rules: vec![
+        // STATE_INITIAL (0) 的规则
+        vec![
+            TransitionRule { 
+                pattern: Pattern::Char('('), 
+                action: StateAction { 
+                    next_state: 0, 
+                    emit_token: Some(Box::new(emit_left_paren)) 
+                }
+            },
+            // ... 更多规则
+        ],
+        // 其他状态的规则
+    ],
+    fallback_rules: vec![/* ... */],
+};
 ```
 
 **组织策略**：
-- 按功能分组到子模块
-- 使用特征对象实现可插拔解析器
-- 函数组合vs面向对象设计
+- **分层设计**：字符操作 → 状态机执行 → Token 生成
+- **规则驱动**：核心逻辑通过状态机规则表达，易于修改和扩展
+- **函数式设计**：TokenEmitter 为纯函数，便于测试和组合
 
 ### 问题：数值解析的精度和类型统一处理
-
-Scheme 支持多种数值类型（整数、有理数、实数、复数），需要统一的解析策略：
-
-**类型层次设计**：
-- 是否在词法层面区分不同数值类型
-- 精度损失的处理策略
-- 科学计数法和特殊数值的支持
-
-**解析策略**：
-- 状态机 vs 正则表达式
-- 错误恢复的边界处理
-- Unicode 数字字符的支持
+MVP 版本，数值解析精度和底层 Rust 的数值类型精度一致。暂不考虑对大数、超高精度浮点数的支持。
 
 ### 问题：Trivia Tokens 的处理策略和性能影响
 
