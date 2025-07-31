@@ -77,38 +77,6 @@ pub struct Token {
 }
 ```
 
-## 核心接口
-
-### 主要词法分析函数
-
-词法分析器本质上是一个从字符迭代器到 Token 迭代器的转换函数：
-
-```rust
-/// 核心词法分析函数：将字符流转换为 Token 流
-/// 函数式设计：Iterator<char> -> Iterator<Token>
-pub fn tokenize<I>(chars: I) -> impl Iterator<Item = Result<Token, LexError>>
-where
-    I: Iterator<Item = char>,
-{
-    // 内部实现细节隐藏在函数内部
-}
-
-/// 便利函数：直接从字符串进行词法分析
-pub fn tokenize_string(input: &str) -> Vec<Result<Token, LexError>> {
-    tokenize(input.chars()).collect()
-}
-
-/// 过滤 Trivia Tokens 的便利函数
-pub fn tokenize_non_trivia<I>(chars: I) -> impl Iterator<Item = Result<Token, LexError>>
-where
-    I: Iterator<Item = char>,
-{
-    tokenize(chars).filter(|result| {
-        matches!(result, Ok(token) if !token.token_type.is_trivia())
-    })
-}
-```
-
 ### LexError
 
 错误类型的代数数据类型：
@@ -126,20 +94,11 @@ pub enum LexError {
 }
 ```
 
-### 辅助类型和函数
+### Span 和 Position
+
+位置和范围信息：
 
 ```rust
-/// 判断 Token 是否为 Trivia（用于过滤）
-impl TokenType {
-    pub fn is_trivia(&self) -> bool {
-        matches!(self, 
-            TokenType::Whitespace(_) | 
-            TokenType::Newline | 
-            TokenType::Comment(_)
-        )
-    }
-}
-
 /// 位置和范围信息
 #[derive(Debug, Clone, PartialEq)]
 pub struct Span {
@@ -155,7 +114,86 @@ pub struct Position {
 }
 ```
 
+### 辅助类型方法
+
+```rust
+/// 判断 Token 是否为 Trivia（用于过滤）
+impl TokenType {
+    pub fn is_trivia(&self) -> bool {
+        matches!(self, 
+            TokenType::Whitespace(_) | 
+            TokenType::Newline | 
+            TokenType::Comment(_)
+        )
+    }
+}
+```
+
+## 核心函数接口（对外接口）
+
+**重要说明**：本节只记录对外暴露的主要接口函数，不包括内部实现函数、私有方法和辅助函数。
+
+### tokenize
+
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| input | `&str` | 源代码字符串 |
+
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Vec<Result<Token, LexError>>` | Token 列表，每个元素可能是成功的 Token 或错误 |
+
+### tokenize_with_trivia
+
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| input | `&str` | 源代码字符串 |
+
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Vec<Result<Token, LexError>>` | 包含 Trivia Tokens 的完整 Token 列表 |
+
+### tokenize_reader
+
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| reader | `R: Read` | 实现 Read trait 的输入源 |
+
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Result<Vec<Token>, Vec<LexError>>` | 成功时返回 Token 列表，失败时返回错误列表 |
+
 ## 关键设计问题
+
+### 问题：接口设计策略 - 泛型 vs 具体类型
+
+词法分析器的接口设计需要在简洁性和灵活性之间权衡：
+
+**泛型接口方案**：
+```rust
+pub fn tokenize<I>(chars: I) -> impl Iterator<Item = Result<Token, LexError>>
+where I: Iterator<Item = char>
+```
+
+**具体类型接口方案**：
+```rust
+pub fn tokenize(input: &str) -> Vec<Result<Token, LexError>>
+pub fn tokenize_reader<R: Read>(reader: R) -> Result<Vec<Token>, Vec<LexError>>
+```
+
+**关键权衡**：
+- API 复杂度 vs 使用灵活性
+- 编译时开销 vs 运行时性能
+- 学习成本 vs 组合能力
+- 错误信息清晰度 vs 抽象程度
+
+TODO
 
 ### 问题：内部状态管理和迭代器实现策略
 
