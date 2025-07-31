@@ -1,6 +1,6 @@
 use std::rc::Rc;
-use crate::lexer::{Lexer, Token, LocatedToken};
-use crate::types::{Value, SchemeError, Result, Position, LocatedValue};
+use crate::legacy::lexer::{Lexer, Token, LocatedToken};
+use crate::legacy::types::{Value, SchemeError, Result, Position, LocatedValue};
 
 /// 语法分析器
 pub struct Parser {

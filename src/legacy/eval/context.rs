@@ -1,4 +1,4 @@
-use crate::types::Position;
+use crate::legacy::types::Position;
 
 /// 调用栈帧
 #[derive(Debug, Clone)]
@@ -104,7 +104,7 @@ impl Default for EvaluationContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Position;
+    use crate::legacy::types::Position;
 
     #[test]
     fn test_evaluation_context_new() {

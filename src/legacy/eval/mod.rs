@@ -9,8 +9,8 @@ pub use core::CoreEvaluator;
 pub use builtins::register_builtins;
 pub use context::{EvaluationContext, CallFrame};
 
-use crate::types::{Value, Result};
-use crate::env::Environment;
+use crate::legacy::types::{Value, Result};
+use crate::legacy::env::Environment;
 
 /// 求值器 - 重构后的主求值器
 pub struct Evaluator {
@@ -48,7 +48,7 @@ impl Evaluator {
     }
     
     /// 求值带位置信息的表达式
-    pub fn eval_located(&self, located_expr: &crate::types::LocatedValue, env: &Environment, context: Option<&EvaluationContext>) -> Result<Value> {
+    pub fn eval_located(&self, located_expr: &crate::legacy::types::LocatedValue, env: &Environment, context: Option<&EvaluationContext>) -> Result<Value> {
         self.core.eval_located(located_expr, env, context)
     }
     

@@ -117,7 +117,7 @@ pub enum Value {
     Lambda {
         params: Vec<String>,
         body: Rc<Value>,
-        env_id: crate::env::EnvironmentId, // 闭包环境 ID
+        env_id: crate::legacy::env::EnvironmentId, // 闭包环境 ID
     },
 }
 

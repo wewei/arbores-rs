@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use crate::eval::Evaluator;
-use crate::parser::Parser;
-use crate::types::{SchemeError, Value};
+use crate::legacy::eval::Evaluator;
+use crate::legacy::parser::Parser;
+use crate::legacy::types::{SchemeError, Value};
 use rustyline::error::ReadlineError;
 use rustyline::{Editor, Result as RustylineResult};
 
@@ -244,12 +244,12 @@ Navigation:
     }
 
     /// 求值多个表达式
-    pub fn eval_multiple(&mut self, input: &str) -> Result<Vec<crate::types::Value>, crate::types::SchemeError> {
+    pub fn eval_multiple(&mut self, input: &str) -> Result<Vec<crate::legacy::types::Value>, crate::legacy::types::SchemeError> {
         let expressions = Parser::parse_multiple_located(input)?;
         let mut results = Vec::new();
         
         // 创建根上下文以支持 callstack 追踪
-        let root_context = crate::eval::EvaluationContext::new();
+        let root_context = crate::legacy::eval::EvaluationContext::new();
         
         for located_expr in expressions {
             let global_env = self.evaluator.get_global_env();
@@ -262,12 +262,12 @@ Navigation:
 
     /// 便利方法：求值单个表达式（用于测试和交互）
     /// context: 可选的求值上下文，用于 callstack 追踪，传入 None 为简单求值
-    pub fn eval(&mut self, input: &str, context: Option<&crate::eval::EvaluationContext>) -> Result<crate::types::Value, crate::types::SchemeError> {
+    pub fn eval(&mut self, input: &str, context: Option<&crate::legacy::eval::EvaluationContext>) -> Result<crate::legacy::types::Value, crate::legacy::types::SchemeError> {
         self.evaluator.eval_string(input, context)
     }
     
     /// 获取全局环境
-    pub fn global_env(&self) -> crate::env::Environment {
+    pub fn global_env(&self) -> crate::legacy::env::Environment {
         self.evaluator.global_env()
     }
 }
@@ -294,7 +294,7 @@ pub fn run_repl() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Value;
+    use crate::legacy::types::Value;
 
     #[test]
     fn test_repl_basic() {

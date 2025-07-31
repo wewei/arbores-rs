@@ -1,4 +1,4 @@
-use crate::types::Value;
+use crate::legacy::types::Value;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -277,7 +277,7 @@ impl SExpressionStorage for MemoryStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Value;
+    use crate::legacy::types::Value;
 
     #[test]
     fn test_memory_storage_basic_operations() {

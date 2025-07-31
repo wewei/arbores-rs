@@ -1,6 +1,8 @@
 // Simple test to check undefined variable error handling
 
-use arbores::{Evaluator, eval::context::EvaluationContext};
+use arbores::legacy::eval::Evaluator;
+use arbores::legacy::eval::context::EvaluationContext;
+use arbores::legacy::types::Position;
 
 fn main() {
     println!("Testing undefined variable error handling...");
@@ -8,7 +10,7 @@ fn main() {
     let evaluator = Evaluator::new();
     let context = EvaluationContext::new();
     let debug_context = context.enter_call(
-        Some(arbores::types::Position::new(1, 1)),
+        Some(Position::new(1, 1)),
         Some("test".to_string())
     );
     

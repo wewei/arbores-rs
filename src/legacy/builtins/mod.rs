@@ -1,4 +1,4 @@
-use crate::types::{Value, SchemeError, Result};
+use crate::legacy::types::{Value, SchemeError, Result};
 
 /// 算术运算函数
 pub fn add(args: &[Value]) -> Result<Value> {

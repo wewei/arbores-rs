@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::types::{Value, SchemeError, Result};
+use crate::legacy::types::{Value, SchemeError, Result};
 
 /// 环境 ID 类型
 pub type EnvironmentId = usize;
@@ -207,7 +207,7 @@ impl Default for Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Value;
+    use crate::legacy::types::Value;
 
     #[test]
     fn test_environment_basic() {

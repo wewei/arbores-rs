@@ -1,8 +1,10 @@
 // Demo showcasing the error position system implementation
 // Run this with: cargo run --example error_position_demo
 
-use arbores::eval::context::EvaluationContext;
-use arbores::{Evaluator, Parser, SchemeError};
+use arbores::legacy::eval::context::EvaluationContext;
+use arbores::legacy::eval::Evaluator;
+use arbores::legacy::parser::Parser;
+use arbores::legacy::types::{SchemeError, Position};
 
 fn main() {
     println!("🚀 Arbores Error Position System Demo");
@@ -22,7 +24,7 @@ fn main() {
     println!("\n📍 Demo 2: Debug Mode (with context)");
     let root_context = EvaluationContext::new();
     let debug_context = root_context.enter_call(
-        Some(arbores::types::Position::new(1, 1)), 
+        Some(Position::new(1, 1)), 
         Some("main".to_string())
     );
     
@@ -95,7 +97,7 @@ fn main() {
     
     let main_context = EvaluationContext::new();
     let program_context = main_context.enter_call(
-        Some(arbores::types::Position::new(1, 1)),
+        Some(Position::new(1, 1)),
         Some("program".to_string())
     );
     
@@ -112,15 +114,15 @@ fn main() {
     println!("\n📍 Demo 7: Context Chain Demonstration");
     let root = EvaluationContext::new();
     let level1 = root.enter_call(
-        Some(arbores::types::Position::new(1, 1)),
+        Some(Position::new(1, 1)),
         Some("main".to_string())
     );
     let level2 = level1.enter_call(
-        Some(arbores::types::Position::new(5, 10)),
+        Some(Position::new(5, 10)),
         Some("calculate".to_string())
     );
     let level3 = level2.enter_call(
-        Some(arbores::types::Position::new(8, 15)),
+        Some(Position::new(8, 15)),
         Some("helper".to_string())
     );
     

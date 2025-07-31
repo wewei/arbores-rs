@@ -1,6 +1,6 @@
-use crate::types::{Value, SchemeError, Result};
-use crate::storage::{MemoryStorage, SExpressionStorage, StoredSExpression, SExpressionId};
-use crate::eval::Evaluator;
+use crate::legacy::{Value, SchemeError, Result};
+use crate::legacy::storage::{MemoryStorage, SExpressionStorage, StoredSExpression, SExpressionId};
+use crate::legacy::eval::Evaluator;
 use std::rc::Rc;
 use std::cell::RefCell;
 

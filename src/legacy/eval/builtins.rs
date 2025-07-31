@@ -1,6 +1,6 @@
-use crate::types::Value;
-use crate::env::Environment;
-use crate::builtins;
+use crate::legacy::types::Value;
+use crate::legacy::env::Environment;
+use crate::legacy::builtins;
 
 /// 注册所有内置函数到环境中
 pub fn register_builtins(env: &Environment) {

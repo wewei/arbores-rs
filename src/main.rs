@@ -1,4 +1,4 @@
-use arbores::repl::Repl;
+use arbores::legacy::repl::Repl;
 use clap::{Arg, Command};
 use std::io::{self, Read};
 

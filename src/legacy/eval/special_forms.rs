@@ -1,6 +1,6 @@
 use std::rc::Rc;
-use crate::types::{Value, SchemeError, Result};
-use crate::env::Environment;
+use crate::legacy::types::{Value, SchemeError, Result};
+use crate::legacy::env::Environment;
 
 /// 特殊形式求值器
 pub struct SpecialFormsEvaluator;

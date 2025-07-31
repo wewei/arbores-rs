@@ -1,7 +1,9 @@
 // Enhanced demo showcasing position-aware error reporting
 // Run this with: cargo run --example enhanced_repl_demo
 
-use arbores::{Evaluator, eval::context::EvaluationContext, types::Position};
+use arbores::legacy::eval::Evaluator;
+use arbores::legacy::eval::context::EvaluationContext;
+use arbores::legacy::types::Position;
 
 fn main() {
     println!("🚀 Enhanced Arbores Error Position Demo");

@@ -1,6 +1,6 @@
-use arbores::repl::Repl;
-use arbores::eval::EvaluationContext;
-use arbores::types::Position;
+use arbores::legacy::repl::Repl;
+use arbores::legacy::eval::EvaluationContext;
+use arbores::legacy::types::Position;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut repl = Repl::new()?;

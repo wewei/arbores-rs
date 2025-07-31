@@ -1,9 +1,9 @@
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::types::{Value, SchemeError, Result, LocatedValue};
-use crate::env::{Environment, EnvironmentManager, EnvironmentId};
-use crate::eval::special_forms::SpecialFormsEvaluator;
-use crate::eval::context::EvaluationContext;
+use crate::legacy::types::{Value, SchemeError, Result, LocatedValue};
+use crate::legacy::env::{Environment, EnvironmentManager, EnvironmentId};
+use crate::legacy::eval::special_forms::SpecialFormsEvaluator;
+use crate::legacy::eval::context::EvaluationContext;
 
 /// 核心求值器
 pub struct CoreEvaluator {
@@ -229,7 +229,7 @@ impl CoreEvaluator {
 
     /// 便利方法：求值字符串
     pub fn eval_string(&self, input: &str, context: Option<&EvaluationContext>) -> Result<Value> {
-        let expr = crate::parser::Parser::parse(input)?;
+        let expr = crate::legacy::parser::Parser::parse(input)?;
         let global_env = Environment::from_id(self.global_env_id, self.env_manager.clone());
         
         // 如果没有提供上下文，创建一个根上下文以支持 callstack 追踪
@@ -271,7 +271,7 @@ impl CoreEvaluator {
     
     /// 求值带位置信息的字符串
     pub fn eval_string_located(&self, input: &str, context: Option<&EvaluationContext>) -> Result<Value> {
-        let located_expr = crate::parser::Parser::parse_located(input)?;
+        let located_expr = crate::legacy::parser::Parser::parse_located(input)?;
         let global_env = Environment::from_id(self.global_env_id, self.env_manager.clone());
         self.eval_located(&located_expr, &global_env, context)
     }

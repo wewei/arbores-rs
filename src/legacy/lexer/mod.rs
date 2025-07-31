@@ -1,5 +1,5 @@
 use std::fmt;
-use crate::types::Position;
+use crate::legacy::types::Position;
 
 /// 带位置信息的 Token
 #[derive(Debug, Clone, PartialEq)]
