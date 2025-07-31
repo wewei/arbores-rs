@@ -72,8 +72,8 @@ pub enum TokenType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
-    pub span: Span,
-    pub raw_text: String,
+    pub position: Position,  // Token 起始位置
+    pub raw_text: String,    // 原始文本，可用于计算结束位置
 }
 ```
 
@@ -94,24 +94,36 @@ pub enum LexError {
 }
 ```
 
-### Span 和 Position
+### Position
 
-位置和范围信息：
+位置信息设计：
 
 ```rust
-/// 位置和范围信息
-#[derive(Debug, Clone, PartialEq)]
-pub struct Span {
-    pub start: Position,
-    pub end: Position,
-}
-
+/// Token 位置信息 - 存储在 Token 中
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
     pub byte_offset: usize,
 }
+
+impl Position {
+    /// 根据文本内容推进位置
+    pub fn advance_by_text(&self, text: &str) -> Position {
+        let mut pos = *self;
+        for ch in text.chars() {
+            if ch == '\n' {
+                pos.line += 1;
+                pos.column = 1;
+            } else {
+                pos.column += 1;
+            }
+            pos.byte_offset += ch.len_utf8();
+        }
+        pos
+    }
+}
+```
 ```
 
 ### 辅助类型方法
@@ -146,35 +158,6 @@ impl TokenType {
 | `impl Iterator<Item = Result<Token, LexError>>` | Token 迭代器，每个元素可能是成功的 Token 或错误 |
 
 ## 关键设计问题
-
-### 问题：接口设计策略 - 泛型 vs 具体类型
-
-词法分析器的接口设计需要在简洁性和灵活性之间权衡：
-
-**采用的泛型接口方案**：
-```rust
-pub fn tokenize<I>(chars: I) -> impl Iterator<Item = Result<Token, LexError>>
-where I: Iterator<Item = char>
-```
-
-**替代的具体类型接口方案**：
-```rust
-pub fn tokenize(input: &str) -> Vec<Result<Token, LexError>>
-pub fn tokenize_reader<R: Read>(reader: R) -> Result<Vec<Token>, Vec<LexError>>
-```
-
-**选择泛型接口的理由**：
-- 支持任意字符迭代器输入（`&str::chars()`, `BufReader` 等）
-- 惰性求值，支持流式处理大文件
-- 零成本抽象，编译时优化
-- 函数式设计，便于组合和链式操作
-
-**便捷函数处理策略**：
-- 核心接口保持泛型设计的纯净性
-- 便捷函数（如 `tokenize_string`, `tokenize_with_trivia`）作为独立模块提供
-- 用户可根据需要选择合适的抽象层次
-
-TODO
 
 ### 问题：内部状态管理和迭代器实现策略
 
@@ -243,30 +226,28 @@ Scheme 支持多种数值类型（整数、有理数、实数、复数），需�
 
 ### 问题：Trivia Tokens 的处理策略和性能影响
 
-包含 Trivia Tokens 会增加 Token 流的大小，需要考虑：
-
-**存储策略**：
-- 是否总是生成 Trivia Tokens
-- 按需生成 vs 后置过滤
-- 内存使用优化
-
-**使用场景**：
-- 代码格式化工具的需求
-- 语法高亮的支持
-- 调试信息的完整性
-
-### 问题：Unicode 符号的高效处理和验证策略
-
-TODO
+Trivia Tokens 要生成，是否保存，如何保存，由后续的 Parser 决定。
 
 ### 问题：错误恢复的同步点选择和恢复粒度
 
-TODO
+MVP 暂不考虑，MVP 不做错误恢复
 
 ### 问题：大文件流式处理的内存管理策略
 
-TODO
+MVP 暂不考虑
 
 ### 问题：位置信息跟踪的性能开销优化
 
+**存储策略优化**：
+- Token 只存储起始 `Position` 和 `raw_text`
+- `Span` 通过计算得出，避免存储冗余
+- 避免通过累计前序 Token 计算位置的 O(n) 开销
+
+**位置计算权衡**：
+- 存储 vs 计算：存储起始位置，按需计算范围
+- 内存使用 vs 计算复杂度：优先减少存储开销
+- Unicode 字符处理：正确处理多字节字符的位置推进
+
 TODO
+
+
