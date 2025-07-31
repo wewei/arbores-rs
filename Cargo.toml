@@ -24,5 +24,6 @@ ctrlc = "3.4"
 rustyline = "10.0"
 clap = { version = "4.0", features = ["derive"] }
 atty = "0.2"
+lazy_static = "1.4"
 
 [dev-dependencies]

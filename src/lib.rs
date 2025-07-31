@@ -4,8 +4,7 @@
 pub mod legacy;
 
 // New modular implementation (under development)
-pub mod lexer;
-// pub mod interpreter;
+pub mod interpreter;
 
 pub mod arbores;
 

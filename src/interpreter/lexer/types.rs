@@ -5,7 +5,7 @@
 //! - 纯数据结构，不包含业务逻辑方法
 //! - 通过独立函数实现行为
 
-use crate::lexer::char_stream::CharStream;
+use crate::interpreter::lexer::char_stream::CharStream;
 
 /// 词法单元类型 - 使用 enum 表示不同的 Token 类型
 #[derive(Debug, Clone, PartialEq)]

@@ -27,19 +27,25 @@
 
 ```text
 /src/lexer/
-├── peekable.rs    # 字符流抽象和前瞻操作
-├── types.rs       # 核心数据类型定义
-├── rules.rs       # 状态机规则定义和 Token 生成器
-├── engine.rs      # 词法分析执行引擎
-└── mod.rs         # 模块接口和公共 API
+├── char_stream.rs    # 字符流抽象和前瞻操作
+├── types.rs          # 核心数据类型定义
+├── pattern_matcher.rs # 模式匹配器
+├── rules.rs          # 状态机规则定义和 Token 生成器
+├── engine.rs         # 词法分析执行引擎
+└── mod.rs            # 模块接口和公共 API
 ```
 
 **模块职责说明**：
 
-- **`peekable.rs`**：封装字符流操作，提供统一的字符前瞻和推进接口
-  - `peek_char()`, `advance_char()` 等字符流操作函数
-  - 位置信息跟踪和更新逻辑
-  - 字符流状态管理
+- **`char_stream.rs`**：封装字符流操作，提供统一的字符前瞻和推进接口
+  - `peek()`, `advance()`, `advance_many()` 等字符流操作函数
+  - 基于 VecDeque 的高效缓冲机制
+  - 支持多字符前瞻的字符流状态管理
+
+- **`pattern_matcher.rs`**：实现基于 CharStream 的模式匹配
+  - `match_pattern()` 主要匹配接口
+  - `match_char()`, `match_string()`, `match_char_class()` 等具体匹配函数
+  - `match_char_class_sequence()` 连续字符类匹配
 
 - **`types.rs`**：定义词法分析器的核心数据结构
   - `TokenType`, `Token`, `LexError`, `Position` 等公共类型
@@ -264,10 +270,10 @@ struct LexerState<I: Iterator<Item = char>> {
 **字符流操作层**：
 ```rust
 // 内部实现函数 - 不暴露给用户
-fn peek_char<I>(state: &LexerState<I>) -> Option<char>
-fn advance_char<I>(state: &mut LexerState<I>) -> Option<char>
+fn peek_char<I>(stream: &mut CharStream<I>) -> Option<&char>
+fn advance_char<I>(stream: &mut CharStream<I>) -> Option<char>
 fn advance_position(pos: &mut Position, ch: char)
-fn match_pattern<I>(state: &LexerState<I>, pattern: &Pattern) -> bool
+fn match_pattern<I>(stream: &mut CharStream<I>, pattern: &Pattern) -> MatchResult
 ```
 
 **状态机执行层**：

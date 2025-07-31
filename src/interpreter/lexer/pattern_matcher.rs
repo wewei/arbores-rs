@@ -2,8 +2,8 @@
 //! 
 //! 基于 CharStream 和 Pattern 实现词法模式匹配，返回匹配的字符串或失配结果。
 
-use crate::lexer::char_stream::CharStream;
-use crate::lexer::types::Pattern;
+use crate::interpreter::lexer::char_stream::CharStream;
+use crate::interpreter::lexer::types::Pattern;
 
 /// 模式匹配结果
 #[derive(Debug, Clone, PartialEq)]
