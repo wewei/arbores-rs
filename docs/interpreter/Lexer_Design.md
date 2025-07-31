@@ -21,6 +21,46 @@
 - **性能优化**：高效的字符流处理和内存使用
 - **函数式设计**：纯函数实现，数据与行为分离
 
+## 源代码结构
+
+词法分析器模块按照职责分离的原则组织，采用分层架构设计：
+
+```text
+/src/lexer/
+├── peekable.rs    # 字符流抽象和前瞻操作
+├── types.rs       # 核心数据类型定义
+├── rules.rs       # 状态机规则定义和 Token 生成器
+├── engine.rs      # 词法分析执行引擎
+└── mod.rs         # 模块接口和公共 API
+```
+
+**模块职责说明**：
+
+- **`peekable.rs`**：封装字符流操作，提供统一的字符前瞻和推进接口
+  - `peek_char()`, `advance_char()` 等字符流操作函数
+  - 位置信息跟踪和更新逻辑
+  - 字符流状态管理
+
+- **`types.rs`**：定义词法分析器的核心数据结构
+  - `TokenType`, `Token`, `LexError`, `Position` 等公共类型
+  - `TransitionRule`, `StateAction`, `Pattern` 等状态机类型
+  - 类型相关的辅助方法和特征实现
+
+- **`rules.rs`**：集中管理词法规则和 Token 生成逻辑
+  - 状态机规则定义 (`SCHEME_STATE_MACHINE`)
+  - Token 生成器函数集合 (`emit_*` 函数)
+  - 模式匹配函数和字符类判断
+
+- **`engine.rs`**：实现状态机驱动的词法分析核心逻辑
+  - `LexerState` 状态管理
+  - 状态转移执行逻辑
+  - Iterator 特征实现和主要执行循环
+
+- **`mod.rs`**：模块对外接口
+  - 导出公共类型和函数
+  - `tokenize()` 主要 API 函数
+  - 模块级文档和使用示例
+
 ## 关键数据类型
 
 ### TokenType
