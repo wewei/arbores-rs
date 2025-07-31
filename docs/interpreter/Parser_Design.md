@@ -16,11 +16,151 @@
 ## 设计目标（非功能性需求）
 
 - **语法完整性**：支持完整的 Scheme 语法结构
-- **类型安全**：泛型设计支持 Value 和 MValue 两种模式
+- **源码追踪**：每个S表达式都能追踪到原始AST节点
 - **性能优化**：高效的递归下降解析
 - **函数式设计**：纯函数实现，避免在结构体上编码业务逻辑
 
 ## 关键数据类型
+
+### AST 核心数据结构
+
+#### SExpr - S表达式
+
+S表达式是Scheme语言的核心数据结构，表示所有可能的语法构造：
+
+```rust
+/// S表达式 - Scheme语言的核心数据结构
+/// 使用 Rc 支持宏展开时的有向无环图结构
+#[derive(Debug, Clone, PartialEq)]
+pub enum SExpr {
+    /// 原子值（数字、字符串、布尔值、符号等）
+    Atom(Value),
+    /// 列表结构 (car . cdr)
+    Cons { car: Rc<SExprNode>, cdr: Rc<SExprNode> },
+    /// 空列表
+    Nil,
+    /// 向量（数组）
+    Vector(Vec<Rc<SExprNode>>),
+}
+```
+
+#### SExprNode - 带源追踪的S表达式
+
+结合S表达式和AST节点信息的互递归结构：
+
+```rust
+/// 带源追踪的S表达式节点
+#[derive(Debug, Clone)]
+pub struct SExprNode {
+    /// S表达式内容
+    pub expr: SExpr,
+    /// 对应的AST节点（用于源追踪）
+    pub ast_node: Option<Weak<ASTNode>>,
+}
+```
+
+#### ASTNode - AST节点
+
+AST节点包含一个S表达式和其在源代码中的位置信息：
+
+```rust
+/// AST节点 - 包含S表达式和位置信息
+#[derive(Debug, Clone)]
+pub struct ASTNode {
+    /// S表达式内容
+    pub expr: SExprNode,
+    /// 源代码位置范围
+    pub span: Span,
+}
+```
+
+### ParseError
+
+解析错误的代数数据类型：
+
+```rust
+/// 语法解析错误 - 使用 enum 表示不同错误情况
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParseError {
+    /// 意外的 token
+    UnexpectedToken {
+        found: Token,
+        reason: UnexpectedTokenReason,
+    },
+    /// 词法错误传播
+    LexError(LexError),
+}
+
+/// 意外Token的具体原因
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnexpectedTokenReason {
+    /// 期望特定类型的token
+    Expected(String),
+    /// 意外的文件结束
+    UnexpectedEof { expected: String },
+    /// 未终止的列表
+    UnterminatedList {
+        start_token: Token, // 列表开始的 '(' token
+    },
+    /// 未终止的向量
+    UnterminatedVector {
+        start_token: Token, // 向量开始的 '#(' token
+    },
+    /// 无效的点对列表
+    InvalidDottedList {
+        dot_token: Token,        // 点号的位置
+        context: DottedListError, // 具体的错误类型
+    },
+    /// 其他语法错误
+    Other(String),
+}
+
+/// 点对列表的具体错误类型
+#[derive(Debug, Clone, PartialEq)]
+pub enum DottedListError {
+    /// 点号位置错误（如在开头、连续点号等）
+    InvalidDotPosition,
+    /// 点号后缺少元素
+    MissingTailElement,
+    /// 点号后有多个元素（应该只有一个）
+    MultipleTailElements,
+    /// 点号前没有足够的元素
+    InsufficientElements,
+}
+```
+
+### ParseResult
+
+解析结果包含AST和重建的源代码内容：
+
+```rust
+/// 解析结果类型 - 包含AST和源码内容
+pub type ParseResult = Result<(Vec<ASTNode>, String), (ParseError, String)>;
+```
+
+## 核心函数接口（对外接口）
+
+**重要说明**：本节只记录对外暴露的主要接口函数，不包括内部实现函数、私有方法和辅助函数。
+
+### parse
+
+Parser的核心函数，从token流解析AST并重建源代码内容。
+
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| tokens | `impl Iterator<Item = Result<Token, LexError>>` | 来自Lexer的token流 |
+
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `ParseResult` | 成功时返回`(Vec<ASTNode>, String)`，失败时返回`(ParseError, String)` |
+
+#### 说明
+- 成功时：返回解析得到的AST节点序列和从token流重建的源代码字符串
+- 失败时：返回解析错误和已处理token重建的源代码字符串（用于错误报告）
+
+## 内部实现结构
 
 ### ParserState
 
@@ -38,249 +178,9 @@ pub struct ParserState {
 }
 ```
 
-### ParseError
-
-解析错误的代数数据类型：
-
-```rust
-/// 语法解析错误 - 使用 enum 表示不同错误情况
-#[derive(Debug, Clone, PartialEq)]
-pub enum ParseError {
-    /// 意外的 token
-    UnexpectedToken {
-        expected: String,
-        found: Token,
-    },
-    /// 意外的文件结束
-    UnexpectedEof,
-    /// 未终止的列表
-    UnterminatedList {
-        start_position: Position,
-    },
-    /// 未终止的向量
-    UnterminatedVector {
-        start_position: Position,
-    },
-    /// 无效的点对列表
-    InvalidDottedList {
-        position: Position,
-    },
-    /// 词法错误传播
-    LexError(LexError),
-    /// 多个错误
-    MultipleErrors(Vec<ParseError>),
-}
-```
-
-### ParseResult
-
-解析结果的代数数据类型：
-
-```rust
-/// 解析结果 - 扩展的 Result 类型
-#[derive(Debug, Clone)]
-pub enum ParseResult<T> {
-    /// 成功解析
-    Success(T),
-    /// 带警告的成功
-    Warning { value: T, message: String },
-    /// 解析失败
-    Error(ParseError),
-}
-```
-
-## 关键功能函数接口
-
-### 状态管理函数
-
-#### new_parser_state
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| tokens | `Vec<Token>` | 词法分析产生的 Token 序列 |
-
-| 类型 | 描述 |
-|------|------|
-| `ParserState` | 新创建的解析器状态 |
-
-#### current_token
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&ParserState` | 解析器状态的引用 |
-
-| 类型 | 描述 |
-|------|------|
-| `Option<&Token>` | 当前 Token 的引用 |
-
-#### advance_parser
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态的可变引用 |
-
-| 类型 | 描述 |
-|------|------|
-| `()` | 无返回值，前进到下一个 Token |
-
-### 核心解析函数
-
-#### parse_expressions
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Vec<SExpr<V>>, ParseError>` | 表达式序列或错误 |
-
-#### parse_expression
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<SExpr<V>, ParseError>` | 单个表达式或错误 |
-
-#### parse_from_string
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| input | `&str` | 源代码字符串 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Vec<SExpr<V>>, ParseError>` | 解析结果或错误 |
-
-### 特定结构解析函数
-
-#### parse_list
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<SExpr<V>, ParseError>` | 列表表达式或错误 |
-
-#### parse_vector
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<SExpr<V>, ParseError>` | 向量表达式或错误 |
-
-#### parse_quoted_expression
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<SExpr<V>, ParseError>` | 引用表达式或错误 |
-
-#### parse_atomic_expression
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<SExpr<V>, ParseError>` | 原子表达式或错误 |
-
-### 列表构建函数
-
-#### build_proper_list
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| elements | `Vec<SExpr<V>>` | 列表元素 |
-
-| 类型 | 描述 |
-|------|------|
-| `V` | 构建的列表值 |
-
-#### build_dotted_list
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| elements | `Vec<SExpr<V>>` | 列表元素 |
-| tail | `SExpr<V>` | 点对的尾部 |
-
-| 类型 | 描述 |
-|------|------|
-| `V` | 构建的点对列表值 |
-
-### 错误处理函数
-
-#### recover_from_parse_error
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `()` | 无返回值，恢复到同步点 |
-
-#### find_sync_point
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-
-| 类型 | 描述 |
-|------|------|
-| `bool` | 是否找到同步点 |
-
-### 验证和检查函数
-
-#### check_token_type
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&ParserState` | 解析器状态 |
-| expected | `&TokenType` | 期望的 Token 类型 |
-
-| 类型 | 描述 |
-|------|------|
-| `bool` | 当前 Token 是否匹配期望类型 |
-
-#### consume_token
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-| expected | `TokenType` | 期望的 Token 类型 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Token, ParseError>` | 消费的 Token 或错误 |
-
-#### expect_token
-
-| 参数名 | 类型 | 描述 |
-|--------|------|------|
-| state | `&mut ParserState` | 解析器状态 |
-| expected_type | `TokenType` | 期望的 Token 类型 |
-| context | `&str` | 错误上下文描述 |
-
-| 类型 | 描述 |
-|------|------|
-| `Result<Token, ParseError>` | 期望的 Token 或详细错误 |
-
 ## 关键设计问题
 
-### 问题：Value 和 MValue 泛型类型系统的设计和转换机制
+### 问题：SExpr与ASTNode的关系设计和源追踪机制
 
 TODO
 

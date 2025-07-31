@@ -118,25 +118,87 @@ pub enum TokenType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
-    pub position: Position,  // Token 起始位置
-    pub raw_text: String,    // 原始文本，可用于计算结束位置
+    pub span: Span,             // Token 位置范围
+    pub raw_text: String,       // 原始文本内容
+}
+
+impl Token {
+    /// 创建新的Token
+    pub fn new(token_type: TokenType, span: Span, raw_text: String) -> Self {
+        Self { token_type, span, raw_text }
+    }
+    
+    /// 从文本和起始位置创建Token
+    pub fn from_text(token_type: TokenType, text: &str, start: Position) -> Self {
+        let span = Span::from_text(text, start);
+        Self::new(token_type, span, text.to_string())
+    }
+    
+    /// 获取Token的起始位置
+    pub fn start_pos(&self) -> Position {
+        self.span.start
+    }
+    
+    /// 获取Token的结束位置
+    pub fn end_pos(&self) -> Position {
+        self.span.end
+    }
 }
 ```
 
 ### LexError
 
-错误类型的代数数据类型：
+规范化的词法错误类型：
 
 ```rust
-/// 词法分析错误 - 使用 enum 表示不同错误情况
+/// 词法分析错误 - 统一的错误结构
 #[derive(Debug, Clone, PartialEq)]
-pub enum LexError {
-    InvalidNumber { text: String, position: Position },
-    UnterminatedString { position: Position },
-    InvalidEscape { character: char, position: Position },
-    InvalidCharacter { text: String, position: Position },
-    IoError(std::io::Error),
-    UnexpectedEof { position: Position },
+pub struct LexError {
+    /// 出问题的位置
+    pub position: Position,
+    /// 导致错误的字符
+    pub found_char: Option<char>,  // None 表示EOF
+    /// 错误的具体原因
+    pub reason: LexErrorReason,
+    /// 尚未被tokenize的字符串（包括buffer中的内容）
+    pub remaining_chars: Box<dyn Iterator<Item = char>>,
+}
+
+/// 词法错误的具体原因
+#[derive(Debug, Clone, PartialEq)]
+pub enum LexErrorReason {
+    /// 无效的数字格式
+    InvalidNumber { partial_text: String },
+    /// 未终止的字符串
+    UnterminatedString,
+    /// 无效的转义字符
+    InvalidEscape { escape_char: char },
+    /// 无效的字符
+    InvalidCharacter,
+    /// 意外的文件结束
+    UnexpectedEof { expected: String },
+    /// 其他词法错误
+    Other(String),
+}
+
+impl LexError {
+    /// 创建新的词法错误
+    pub fn new(
+        position: Position, 
+        found_char: Option<char>, 
+        reason: LexErrorReason,
+        remaining_chars: Box<dyn Iterator<Item = char>>
+    ) -> Self {
+        Self { position, found_char, reason, remaining_chars }
+    }
+    
+    /// 获取错误的显示文本
+    pub fn found_text(&self) -> String {
+        match self.found_char {
+            Some(ch) => ch.to_string(),
+            None => "EOF".to_string(),
+        }
+    }
 }
 ```
 
@@ -170,6 +232,41 @@ impl Position {
     }
 }
 ```
+
+### Span
+
+位置范围信息，可与Parser的ASTNode公用：
+
+```rust
+/// 源码位置范围 - 包含起始和结束位置
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
+}
+
+impl Span {
+    /// 创建新的Span
+    pub fn new(start: Position, end: Position) -> Self {
+        Self { start, end }
+    }
+    
+    /// 从文本和起始位置创建Span
+    pub fn from_text(text: &str, start: Position) -> Self {
+        let end = start.advance_by_text(text);
+        Self { start, end }
+    }
+    
+    /// 获取Span的长度（字节数）
+    pub fn len(&self) -> usize {
+        self.end.byte_offset - self.start.byte_offset
+    }
+    
+    /// 判断Span是否为空
+    pub fn is_empty(&self) -> bool {
+        self.start.byte_offset == self.end.byte_offset
+    }
+}
 
 ### 辅助类型方法
 
