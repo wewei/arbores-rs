@@ -4,7 +4,7 @@
 //! 遵循函数式设计原则，所有生成器都是纯函数。
 
 use crate::interpreter::lexer::types::{
-    Token, TokenType, LexError, Position, Pattern, StateAction, TransitionRule, StateMachine
+    Token, TokenType, LexError, LexErrorReason, Position, Pattern, StateAction, TransitionRule, StateMachine
 };
 
 // ============================================================================
@@ -27,15 +27,18 @@ pub const STATE_CHARACTER: usize = 7;
 /// 生成数字 Token
 pub fn emit_number(raw_text: &str, position: Position) -> Result<Token, LexError> {
     match raw_text.parse::<f64>() {
-        Ok(value) => Ok(Token::new(
+        Ok(value) => Ok(Token::from_text(
             TokenType::Number(value),
+            raw_text,
             position,
-            raw_text.to_string(),
         )),
-        Err(_) => Err(LexError::InvalidNumber {
-            text: raw_text.to_string(),
+        Err(_) => Err(LexError::new(
             position,
-        }),
+            None,
+            LexErrorReason::InvalidNumber {
+                partial_text: raw_text.to_string(),
+            },
+        )),
     }
 }
 
@@ -43,7 +46,11 @@ pub fn emit_number(raw_text: &str, position: Position) -> Result<Token, LexError
 pub fn emit_string(raw_text: &str, position: Position) -> Result<Token, LexError> {
     // 去掉首尾的引号
     if raw_text.len() < 2 || !raw_text.starts_with('"') || !raw_text.ends_with('"') {
-        return Err(LexError::UnterminatedString { position });
+        return Err(LexError::new(
+            position,
+            None,
+            LexErrorReason::UnterminatedString,
+        ));
     }
     
     let content = &raw_text[1..raw_text.len()-1];
@@ -51,10 +58,10 @@ pub fn emit_string(raw_text: &str, position: Position) -> Result<Token, LexError
     // 处理转义序列
     let processed_content = process_string_escapes(content, position)?;
     
-    Ok(Token::new(
+    Ok(Token::from_text(
         TokenType::String(processed_content),
+        raw_text,
         position,
-        raw_text.to_string(),
     ))
 }
 
@@ -62,20 +69,20 @@ pub fn emit_string(raw_text: &str, position: Position) -> Result<Token, LexError
 pub fn emit_symbol(raw_text: &str, position: Position) -> Result<Token, LexError> {
     // 检查是否为布尔值
     match raw_text {
-        "#t" | "#true" => Ok(Token::new(
+        "#t" | "#true" => Ok(Token::from_text(
             TokenType::Boolean(true),
+            raw_text,
             position,
-            raw_text.to_string(),
         )),
-        "#f" | "#false" => Ok(Token::new(
+        "#f" | "#false" => Ok(Token::from_text(
             TokenType::Boolean(false),
+            raw_text,
             position,
-            raw_text.to_string(),
         )),
-        _ => Ok(Token::new(
+        _ => Ok(Token::from_text(
             TokenType::Symbol(raw_text.to_string()),
+            raw_text,
             position,
-            raw_text.to_string(),
         )),
     }
 }
@@ -85,120 +92,81 @@ pub fn emit_comment(raw_text: &str, position: Position) -> Result<Token, LexErro
     // 去掉开头的分号
     let content = raw_text.strip_prefix(';').unwrap_or(raw_text);
     
-    Ok(Token::new(
+    Ok(Token::from_text(
         TokenType::Comment(content.to_string()),
+        raw_text,
         position,
-        raw_text.to_string(),
     ))
 }
 
 /// 生成空白字符 Token
 pub fn emit_whitespace(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
+    Ok(Token::from_text(
         TokenType::Whitespace(raw_text.to_string()),
+        raw_text,
         position,
-        raw_text.to_string(),
     ))
 }
 
 /// 生成换行符 Token
 pub fn emit_newline(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::Newline,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::Newline, raw_text, position))
 }
 
 /// 生成左括号 Token
 pub fn emit_left_paren(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::LeftParen,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::LeftParen, raw_text, position))
 }
 
 /// 生成右括号 Token
 pub fn emit_right_paren(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::RightParen,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::RightParen, raw_text, position))
 }
 
 /// 生成左方括号 Token
 pub fn emit_left_bracket(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::LeftBracket,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::LeftBracket, raw_text, position))
 }
 
 /// 生成右方括号 Token
 pub fn emit_right_bracket(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::RightBracket,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::RightBracket, raw_text, position))
 }
 
 /// 生成引号 Token
 pub fn emit_quote(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::Quote,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::Quote, raw_text, position))
 }
 
 /// 生成反引号 Token
 pub fn emit_quasiquote(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::Quasiquote,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::Quasiquote, raw_text, position))
 }
 
 /// 生成逗号反引号 Token
 pub fn emit_unquote_splicing(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::UnquoteSplicing,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::UnquoteSplicing, raw_text, position))
 }
 
 /// 生成逗号 Token
 pub fn emit_unquote(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::Unquote,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::Unquote, raw_text, position))
 }
 
 /// 生成点号 Token
 pub fn emit_dot(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::Dot,
-        position,
-        raw_text.to_string(),
-    ))
+    Ok(Token::from_text(TokenType::Dot, raw_text, position))
 }
 
 /// 生成字符 Token
 pub fn emit_character(raw_text: &str, position: Position) -> Result<Token, LexError> {
     // 字符字面量格式：#\字符 或 #\字符名
     if !raw_text.starts_with("#\\") {
-        return Err(LexError::InvalidCharacter {
-            text: raw_text.to_string(),
+        return Err(LexError::new(
             position,
-        });
+            raw_text.chars().next(),
+            LexErrorReason::InvalidCharacter,
+        ));
     }
     
     let char_part = &raw_text[2..];
@@ -208,34 +176,32 @@ pub fn emit_character(raw_text: &str, position: Position) -> Result<Token, LexEr
         "tab" => '\t',
         "return" => '\r',
         c if c.chars().count() == 1 => c.chars().next().unwrap(),
-        _ => return Err(LexError::InvalidCharacter {
-            text: raw_text.to_string(),
+        _ => return Err(LexError::new(
             position,
-        }),
+            raw_text.chars().next(),
+            LexErrorReason::InvalidCharacter,
+        )),
     };
     
-    Ok(Token::new(
+    Ok(Token::from_text(
         TokenType::Character(character),
+        raw_text,
         position,
-        raw_text.to_string(),
     ))
 }
 
 /// 生成文件结束 Token
 pub fn emit_eof(_raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Ok(Token::new(
-        TokenType::Eof,
-        position,
-        "".to_string(),
-    ))
+    Ok(Token::from_text(TokenType::Eof, "", position))
 }
 
 /// 生成错误 Token
 pub fn emit_error(raw_text: &str, position: Position) -> Result<Token, LexError> {
-    Err(LexError::InvalidCharacter {
-        text: raw_text.to_string(),
+    Err(LexError::new(
         position,
-    })
+        raw_text.chars().next(),
+        LexErrorReason::InvalidCharacter,
+    ))
 }
 
 // ============================================================================
@@ -256,13 +222,18 @@ fn process_string_escapes(content: &str, position: Position) -> Result<String, L
                 Some('\\') => result.push('\\'),
                 Some('"') => result.push('"'),
                 Some(escape_char) => {
-                    return Err(LexError::InvalidEscape {
-                        character: escape_char,
+                    return Err(LexError::new(
                         position,
-                    });
+                        Some(escape_char),
+                        LexErrorReason::InvalidEscape { escape_char },
+                    ));
                 }
                 None => {
-                    return Err(LexError::UnterminatedString { position });
+                    return Err(LexError::new(
+                        position,
+                        None,
+                        LexErrorReason::UnterminatedString,
+                    ));
                 }
             }
         } else {

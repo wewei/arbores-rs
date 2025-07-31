@@ -45,18 +45,36 @@ pub enum TokenType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
-    pub position: Position,  // Token 起始位置
-    pub raw_text: String,    // 原始文本，可用于计算结束位置
+    pub span: Span,             // Token 位置范围
+    pub raw_text: String,       // 原始文本内容
 }
 
-/// 词法分析错误 - 使用 enum 表示不同错误情况
+/// 词法分析错误 - 统一的错误结构
 #[derive(Debug, Clone, PartialEq)]
-pub enum LexError {
-    InvalidNumber { text: String, position: Position },
-    UnterminatedString { position: Position },
-    InvalidEscape { character: char, position: Position },
-    InvalidCharacter { text: String, position: Position },
-    UnexpectedEof { position: Position },
+pub struct LexError {
+    /// 出问题的位置
+    pub position: Position,
+    /// 导致错误的字符
+    pub found_char: Option<char>,  // None 表示EOF
+    /// 错误的具体原因
+    pub reason: LexErrorReason,
+}
+
+/// 词法错误的具体原因
+#[derive(Debug, Clone, PartialEq)]
+pub enum LexErrorReason {
+    /// 无效的数字格式
+    InvalidNumber { partial_text: String },
+    /// 未终止的字符串
+    UnterminatedString,
+    /// 无效的转义字符
+    InvalidEscape { escape_char: char },
+    /// 无效的字符
+    InvalidCharacter,
+    /// 意外的文件结束
+    UnexpectedEof { expected: String },
+    /// 其他词法错误
+    Other(String),
 }
 
 /// Token 位置信息 - 存储在 Token 中
@@ -65,6 +83,13 @@ pub struct Position {
     pub line: usize,
     pub column: usize,
     pub byte_offset: usize,
+}
+
+/// 源码位置范围 - 包含起始和结束位置
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Span {
+    pub start: Position,
+    pub end: Position,
 }
 
 /// 状态机匹配模式
@@ -114,11 +139,11 @@ pub struct LexerState<I: Iterator<Item = char>> {
 
 impl Position {
     /// 创建新的位置信息
-    pub fn new(line: usize, column: usize) -> Self {
+    pub fn new(line: usize, column: usize, byte_offset: usize) -> Self {
         Self {
             line,
             column,
-            byte_offset: 0,
+            byte_offset,
         }
     }
 
@@ -130,16 +155,96 @@ impl Position {
             byte_offset: 0,
         }
     }
+
+    /// 根据文本内容推进位置
+    pub fn advance_by_text(&self, text: &str) -> Position {
+        let mut pos = *self;
+        for ch in text.chars() {
+            if ch == '\n' {
+                pos.line += 1;
+                pos.column = 1;
+            } else {
+                pos.column += 1;
+            }
+            pos.byte_offset += ch.len_utf8();
+        }
+        pos
+    }
+}
+
+impl Span {
+    /// 创建新的Span
+    pub fn new(start: Position, end: Position) -> Self {
+        Self { start, end }
+    }
+    
+    /// 从文本和起始位置创建Span
+    pub fn from_text(text: &str, start: Position) -> Self {
+        let end = start.advance_by_text(text);
+        Self { start, end }
+    }
+    
+    /// 获取Span的长度（字节数）
+    pub fn len(&self) -> usize {
+        self.end.byte_offset - self.start.byte_offset
+    }
+    
+    /// 判断Span是否为空
+    pub fn is_empty(&self) -> bool {
+        self.start.byte_offset == self.end.byte_offset
+    }
 }
 
 impl Token {
-    /// 创建新的 Token
-    pub fn new(token_type: TokenType, position: Position, raw_text: String) -> Self {
-        Self {
-            token_type,
-            position,
-            raw_text,
+    /// 创建新的Token
+    pub fn new(token_type: TokenType, span: Span, raw_text: String) -> Self {
+        Self { token_type, span, raw_text }
+    }
+    
+    /// 从文本和起始位置创建Token
+    pub fn from_text(token_type: TokenType, text: &str, start: Position) -> Self {
+        let span = Span::from_text(text, start);
+        Self::new(token_type, span, text.to_string())
+    }
+    
+    /// 获取Token的起始位置
+    pub fn start_pos(&self) -> Position {
+        self.span.start
+    }
+    
+    /// 获取Token的结束位置
+    pub fn end_pos(&self) -> Position {
+        self.span.end
+    }
+}
+
+impl LexError {
+    /// 创建新的词法错误
+    pub fn new(
+        position: Position, 
+        found_char: Option<char>, 
+        reason: LexErrorReason,
+    ) -> Self {
+        Self { position, found_char, reason }
+    }
+    
+    /// 获取错误的显示文本
+    pub fn found_text(&self) -> String {
+        match self.found_char {
+            Some(ch) => ch.to_string(),
+            None => "EOF".to_string(),
         }
+    }
+}
+
+impl TokenType {
+    /// 判断 Token 是否为 Trivia（用于过滤）
+    pub fn is_trivia(&self) -> bool {
+        matches!(self, 
+            TokenType::Whitespace(_) | 
+            TokenType::Newline | 
+            TokenType::Comment(_)
+        )
     }
 }
 
@@ -177,72 +282,36 @@ impl<I: Iterator<Item = char>> LexerState<I> {
 }
 
 // ============================================================================
-// 辅助类型方法 - 纯函数实现
-// ============================================================================
-
-/// 判断 Token 是否为 Trivia（用于过滤）
-pub fn is_trivia_token(token_type: &TokenType) -> bool {
-    matches!(token_type, 
-        TokenType::Whitespace(_) | 
-        TokenType::Newline | 
-        TokenType::Comment(_)
-    )
-}
-
-/// 根据文本内容推进位置
-pub fn advance_position_by_text(pos: Position, text: &str) -> Position {
-    let mut new_pos = pos;
-    for ch in text.chars() {
-        if ch == '\n' {
-            new_pos.line += 1;
-            new_pos.column = 1;
-        } else {
-            new_pos.column += 1;
-        }
-        new_pos.byte_offset += ch.len_utf8();
-    }
-    new_pos
-}
-
-/// 推进位置一个字符
-pub fn advance_position_by_char(pos: Position, ch: char) -> Position {
-    let mut new_pos = pos;
-    if ch == '\n' {
-        new_pos.line += 1;
-        new_pos.column = 1;
-    } else {
-        new_pos.column += 1;
-    }
-    new_pos.byte_offset += ch.len_utf8();
-    new_pos
-}
-
-// ============================================================================
-// 错误处理辅助函数
+// 错误处理
 // ============================================================================
 
 impl std::fmt::Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LexError::InvalidNumber { text, position } => {
+        match &self.reason {
+            LexErrorReason::InvalidNumber { partial_text } => {
                 write!(f, "Invalid number '{}' at line {}, column {}", 
-                       text, position.line, position.column)
+                       partial_text, self.position.line, self.position.column)
             }
-            LexError::UnterminatedString { position } => {
+            LexErrorReason::UnterminatedString => {
                 write!(f, "Unterminated string at line {}, column {}", 
-                       position.line, position.column)
+                       self.position.line, self.position.column)
             }
-            LexError::InvalidEscape { character, position } => {
+            LexErrorReason::InvalidEscape { escape_char } => {
                 write!(f, "Invalid escape character '{}' at line {}, column {}", 
-                       character, position.line, position.column)
+                       escape_char, self.position.line, self.position.column)
             }
-            LexError::InvalidCharacter { text, position } => {
+            LexErrorReason::InvalidCharacter => {
+                let found = self.found_text();
                 write!(f, "Invalid character '{}' at line {}, column {}", 
-                       text, position.line, position.column)
+                       found, self.position.line, self.position.column)
             }
-            LexError::UnexpectedEof { position } => {
-                write!(f, "Unexpected end of file at line {}, column {}", 
-                       position.line, position.column)
+            LexErrorReason::UnexpectedEof { expected } => {
+                write!(f, "Unexpected end of file (expected '{}') at line {}, column {}", 
+                       expected, self.position.line, self.position.column)
+            }
+            LexErrorReason::Other(msg) => {
+                write!(f, "{} at line {}, column {}", 
+                       msg, self.position.line, self.position.column)
             }
         }
     }
@@ -256,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_position_creation() {
-        let pos = Position::new(1, 1);
+        let pos = Position::new(1, 1, 0);
         assert_eq!(pos.line, 1);
         assert_eq!(pos.column, 1);
         assert_eq!(pos.byte_offset, 0);
@@ -271,55 +340,73 @@ mod tests {
     }
 
     #[test]
-    fn test_advance_position_by_char() {
-        let pos = Position::start();
-        
-        // 普通字符
-        let pos2 = advance_position_by_char(pos, 'a');
-        assert_eq!(pos2.line, 1);
-        assert_eq!(pos2.column, 2);
-        assert_eq!(pos2.byte_offset, 1);
-        
-        // 换行符
-        let pos3 = advance_position_by_char(pos2, '\n');
-        assert_eq!(pos3.line, 2);
-        assert_eq!(pos3.column, 1);
-        assert_eq!(pos3.byte_offset, 2);
-    }
-
-    #[test]
-    fn test_advance_position_by_text() {
+    fn test_position_advance_by_text() {
         let pos = Position::start();
         let text = "hello\nworld";
         
-        let new_pos = advance_position_by_text(pos, text);
+        let new_pos = pos.advance_by_text(text);
         assert_eq!(new_pos.line, 2);
         assert_eq!(new_pos.column, 6); // "world" 有 5 个字符，所以列是 6
         assert_eq!(new_pos.byte_offset, 11);
     }
 
     #[test]
-    fn test_is_trivia_token() {
-        assert!(is_trivia_token(&TokenType::Whitespace(" ".to_string())));
-        assert!(is_trivia_token(&TokenType::Newline));
-        assert!(is_trivia_token(&TokenType::Comment("comment".to_string())));
+    fn test_span_creation() {
+        let start = Position::start();
+        let end = Position::new(1, 6, 5);
+        let span = Span::new(start, end);
         
-        assert!(!is_trivia_token(&TokenType::Number(42.0)));
-        assert!(!is_trivia_token(&TokenType::Symbol("symbol".to_string())));
-        assert!(!is_trivia_token(&TokenType::LeftParen));
+        assert_eq!(span.start, start);
+        assert_eq!(span.end, end);
+        assert_eq!(span.len(), 5);
+        assert!(!span.is_empty());
+    }
+
+    #[test]
+    fn test_span_from_text() {
+        let start = Position::start();
+        let text = "hello";
+        let span = Span::from_text(text, start);
+        
+        assert_eq!(span.start, start);
+        assert_eq!(span.len(), 5);
+        assert_eq!(span.end.column, 6);
+    }
+
+    #[test]
+    fn test_token_is_trivia() {
+        assert!(TokenType::Whitespace(" ".to_string()).is_trivia());
+        assert!(TokenType::Newline.is_trivia());
+        assert!(TokenType::Comment("comment".to_string()).is_trivia());
+        
+        assert!(!TokenType::Number(42.0).is_trivia());
+        assert!(!TokenType::Symbol("symbol".to_string()).is_trivia());
+        assert!(!TokenType::LeftParen.is_trivia());
     }
 
     #[test]
     fn test_token_creation() {
-        let pos = Position::start();
-        let token = Token::new(
-            TokenType::Number(42.0),
-            pos,
-            "42".to_string()
-        );
+        let start = Position::start();
+        let text = "42";
+        let token = Token::from_text(TokenType::Number(42.0), text, start);
         
         assert_eq!(token.token_type, TokenType::Number(42.0));
-        assert_eq!(token.position, pos);
+        assert_eq!(token.start_pos(), start);
         assert_eq!(token.raw_text, "42");
+        assert_eq!(token.span.len(), 2);
+    }
+
+    #[test]
+    fn test_lex_error_creation() {
+        let pos = Position::start();
+        let error = LexError::new(
+            pos,
+            Some('!'),
+            LexErrorReason::InvalidCharacter,
+        );
+        
+        assert_eq!(error.position, pos);
+        assert_eq!(error.found_char, Some('!'));
+        assert_eq!(error.found_text(), "!");
     }
 }

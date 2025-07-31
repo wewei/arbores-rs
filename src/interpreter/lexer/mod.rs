@@ -10,7 +10,7 @@ pub mod engine;
 pub mod demo;
 
 // 重新导出主要的公共类型和函数
-pub use types::{Token, TokenType, LexError, Position};
+pub use types::{Token, TokenType, LexError, LexErrorReason, Position, Span};
 pub use char_stream::CharStream;
 pub use pattern_matcher::{MatchResult, match_pattern, match_char_class_sequence};
 pub use engine::{tokenize, tokenize_string, tokenize_to_vec, filter_trivia_tokens};

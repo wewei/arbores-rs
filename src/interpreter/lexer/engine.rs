@@ -3,8 +3,7 @@
 //! 本模块实现状态机驱动的词法分析核心逻辑，包括状态管理、状态转移执行和迭代器实现。
 
 use crate::interpreter::lexer::types::{
-    Token, LexError, LexerState, StateMachine, TransitionRule, StateAction,
-    advance_position_by_char
+    Token, LexError, LexErrorReason, LexerState, StateMachine, TransitionRule, StateAction
 };
 use crate::interpreter::lexer::pattern_matcher::{match_pattern, MatchResult};
 use crate::interpreter::lexer::rules::{get_scheme_state_machine, emit_eof};
@@ -161,9 +160,7 @@ fn execute_transition<I: Iterator<Item = char>>(
             state.buffer.push_str(&matched_text);
             
             // 更新位置信息
-            for ch in matched_text.chars() {
-                state.current_pos = advance_position_by_char(state.current_pos, ch);
-            }
+            state.current_pos = state.current_pos.advance_by_text(&matched_text);
             
             // 检查是否需要生成 Token
             if let Some(emitter) = rule.action.emit_token {
@@ -186,10 +183,11 @@ fn execute_transition<I: Iterator<Item = char>>(
         MatchResult::Failure => {
             // 理论上不应该到达这里，因为我们已经检查过匹配
             // 但为了安全，我们返回一个错误
-            Some(Err(LexError::InvalidCharacter {
-                text: state.buffer.clone(),
-                position: state.current_pos,
-            }))
+            Some(Err(LexError::new(
+                state.current_pos,
+                state.buffer.chars().next(),
+                LexErrorReason::InvalidCharacter,
+            )))
         }
     }
 }
@@ -256,7 +254,7 @@ where
 {
     token_iter.filter(|token_result| {
         match token_result {
-            Ok(token) => !crate::interpreter::lexer::types::is_trivia_token(&token.token_type),
+            Ok(token) => !token.token_type.is_trivia(),
             Err(_) => true, // 保留错误
         }
     })
@@ -382,7 +380,7 @@ mod tests {
         let world_token = world_token.unwrap();
         
         // "world" 应该在第二行
-        assert_eq!(world_token.position.line, 2);
+        assert_eq!(world_token.start_pos().line, 2);
     }
 
     #[test]
