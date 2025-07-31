@@ -131,83 +131,25 @@ pub enum DottedListError {
 
 ### ParseResult
 
-解析结果包含AST和重建的源代码内容：
+解析结果类型，只包含AST或错误信息：
 
 ```rust
-/// 解析结果类型 - 包含AST和源码内容
-pub type ParseResult = Result<(Vec<ASTNode>, String), (ParseError, String)>;
+/// 解析结果类型 - 只包含AST或错误
+pub type ParseResult = Result<Vec<ASTNode>, ParseError>;
 ```
 
-## 内部实现结构
+### ParseOutput
 
-### ParserState
-
-解析器状态的纯数据结构：
+Parser的完整输出结构，包含解析结果和重建的源代码：
 
 ```rust
-/// 语法分析器状态 - 纯数据结构
-pub struct ParserState {
-    /// Token 流（使用Vec支持回退和前瞻）
-    pub tokens: Vec<Token>,
-    /// 当前 Token 索引
-    pub current_index: usize,
-    /// 递归深度（防止栈溢出）
-    pub depth: usize,
-    /// 解析错误收集
-    pub errors: Vec<ParseError>,
-    /// 源代码重建缓冲区
-    pub source_buffer: String,
+/// Parser的完整输出结构
+pub struct ParseOutput {
+    /// 解析结果（AST或错误）
+    pub result: ParseResult,
+    /// 重建的源代码文本
+    pub source_text: String,
 }
-```
-
-### 核心解析函数（内部接口）
-
-#### 表达式解析
-```rust
-/// 解析单个S表达式
-fn parse_expression(state: &mut ParserState) -> Result<SExprNode, ParseError>
-
-/// 解析原子表达式（数字、字符串、符号等）
-fn parse_atom(state: &mut ParserState) -> Result<SExprNode, ParseError>
-
-/// 解析列表表达式 (...)
-fn parse_list(state: &mut ParserState) -> Result<SExprNode, ParseError>
-
-/// 解析向量表达式 #(...)
-fn parse_vector(state: &mut ParserState) -> Result<SExprNode, ParseError>
-
-/// 解析引用表达式 'expr, `expr, ,expr, ,@expr
-fn parse_quoted(state: &mut ParserState, quote_type: QuoteType) -> Result<SExprNode, ParseError>
-```
-
-#### 辅助工具函数
-```rust
-/// 消费期望的Token类型
-fn expect_token(state: &mut ParserState, expected: TokenType) -> Result<Token, ParseError>
-
-/// 检查当前Token类型
-fn peek_token(state: &ParserState) -> Option<&Token>
-
-/// 推进到下一个Token
-fn advance_token(state: &mut ParserState) -> Option<Token>
-
-/// 检查是否到达输入结尾
-fn is_at_end(state: &ParserState) -> bool
-
-/// 创建带源追踪的SExpr节点
-fn create_sexpr_node(expr: SExpr, span: Span) -> Rc<SExprNode>
-```
-
-#### 错误处理和恢复
-```rust
-/// 同步到下一个安全解析点
-fn synchronize_to_safe_point(state: &mut ParserState)
-
-/// 报告解析错误并尝试恢复
-fn report_error_and_recover(state: &mut ParserState, error: ParseError) -> Option<SExprNode>
-
-/// 验证括号匹配
-fn validate_balanced_parens(tokens: &[Token]) -> Result<(), ParseError>
 ```
 
 ## 核心函数接口（对外接口）
@@ -226,11 +168,11 @@ Parser的核心函数，从token流解析AST并重建源代码内容。
 #### 返回值
 | 类型 | 描述 |
 |------|------|
-| `ParseResult` | 成功时返回`(Vec<ASTNode>, String)`，失败时返回`(ParseError, String)` |
+| `ParseOutput` | 包含解析结果和重建的源代码文本的结构体 |
 
 #### 说明
-- 成功时：返回解析得到的AST节点序列和从token流重建的源代码字符串
-- 失败时：返回解析错误和已处理token重建的源代码字符串（用于错误报告）
+- `result` 字段：成功时包含解析得到的AST节点序列，失败时包含解析错误
+- `source_text` 字段：从token流重建的源代码字符串（无论成功或失败都会包含已处理的部分）
 
 ## 关键设计问题
 
@@ -291,19 +233,68 @@ fn validate_dotted_list(elements: &[SExpr], dot_pos: usize, tail: &SExpr) -> Res
 
 **转换实现策略**：
 ```rust
-fn parse_quoted_expression(quote_token: Token, expr: SExpr) -> SExpr {
-    let quote_symbol = create_symbol_node("quote", quote_token.span);
-    let quoted_expr = create_sexpr_node(expr, quote_token.span);
+fn parse_quoted_expression(quote_token: Token, expr: SExprNode) -> SExprNode {
+    // 创建 quote 符号节点
+    let quote_symbol = SExprNode {
+        expr: SExpr::Atom(Value::Symbol("quote".to_string())),
+        ast_node: None, // 将在创建 AST 节点时设置
+    };
     
-    SExpr::Cons {
-        car: quote_symbol,
-        cdr: Rc::new(SExprNode {
-            expr: SExpr::Cons {
-                car: quoted_expr,
-                cdr: create_nil_node(quote_token.span.end),
-            },
-            ast_node: Some(weak_ref_to_ast_node),
-        }),
+    // 创建尾部 nil 节点
+    let nil_node = SExprNode {
+        expr: SExpr::Nil,
+        ast_node: None, // 将在创建 AST 节点时设置
+    };
+    
+    // 构建内层列表：(expr)
+    let inner_cons = SExprNode {
+        expr: SExpr::Cons {
+            car: Rc::new(expr),
+            cdr: Rc::new(nil_node),
+        },
+        ast_node: None, // 将在创建 AST 节点时设置
+    };
+    
+    // 构建外层列表：(quote (expr))
+    let quoted_expr = SExprNode {
+        expr: SExpr::Cons {
+            car: Rc::new(quote_symbol),
+            cdr: Rc::new(inner_cons),
+        },
+        ast_node: None, // 将在上层函数中设置到对应的 ASTNode
+    };
+    
+    quoted_expr
+}
+
+fn create_ast_node_for_quote(quoted_expr: SExprNode, quote_span: Span) -> Rc<ASTNode> {
+    // 创建 AST 节点
+    let ast_node = Rc::new(ASTNode {
+        expr: quoted_expr.clone(),
+        span: quote_span,
+    });
+    
+    // 建立 SExprNode 到 ASTNode 的弱引用
+    // 这里需要递归设置所有嵌套的 SExprNode 的 ast_node 字段
+    set_ast_node_recursive(&quoted_expr, &ast_node);
+    
+    ast_node
+}
+
+fn set_ast_node_recursive(sexpr_node: &SExprNode, ast_node: &Rc<ASTNode>) {
+    // 注意：这里需要使用内部可变性来修改 ast_node 字段
+    // 实际实现中可能需要使用 RefCell 或其他机制
+    match &sexpr_node.expr {
+        SExpr::Cons { car, cdr } => {
+            set_ast_node_recursive(car, ast_node);
+            set_ast_node_recursive(cdr, ast_node);
+        }
+        SExpr::Vector(elements) => {
+            for elem in elements {
+                set_ast_node_recursive(elem, ast_node);
+            }
+        }
+        _ => {} // Atom 和 Nil 不需要递归处理
     }
 }
 ```
@@ -312,6 +303,32 @@ fn parse_quoted_expression(quote_token: Token, expr: SExpr) -> SExpr {
 1. **源位置追踪**：转换后的AST节点保持原始位置信息
 2. **语法糖展开**：保留展开前后的对应关系
 3. **调试信息**：错误报告时显示原始语法形式
+
+**AST节点关联策略**：
+- **统一追踪**：所有由引用语法糖展开的S表达式都关联到同一个AST节点
+- **位置保持**：AST节点的`span`字段包含整个引用表达式的范围（从引用符号到被引用表达式结束）
+- **错误定位**：当展开后的表达式出错时，能够准确定位到原始的引用语法位置
+
+**完整的引用解析流程**：
+```rust
+fn parse_quote_syntax(state: &mut ParserState) -> Result<Rc<ASTNode>, ParseError> {
+    let quote_token = expect_token(state, TokenType::Quote)?; // 获取 ' token
+    let quoted_expr_node = parse_expression(state)?; // 解析被引用的表达式
+    
+    // 构建展开后的 (quote expr) 结构
+    let expanded_sexpr = parse_quoted_expression(quote_token.clone(), quoted_expr_node);
+    
+    // 创建包含完整位置信息的 AST 节点
+    let full_span = Span::new(
+        quote_token.start_pos(), 
+        expanded_sexpr.span.end_pos()
+    );
+    
+    let ast_node = create_ast_node_for_quote(expanded_sexpr, full_span);
+    
+    Ok(ast_node)
+}
+```
 
 ### 问题：递归下降解析的深度限制和栈溢出防护
 
@@ -488,7 +505,7 @@ fn create_ast_node(expr_node: SExprNode) -> Rc<ASTNode> {
     ast_node
 }
 
-fn parse_with_source_tracking(tokens: Vec<Token>) -> ParseResult {
+fn parse_with_source_tracking(tokens: Vec<Token>) -> ParseOutput {
     let mut state = ParserState::new(tokens);
     let mut ast_nodes = Vec::new();
     let mut source_buffer = String::new();
@@ -501,12 +518,18 @@ fn parse_with_source_tracking(tokens: Vec<Token>) -> ParseResult {
                 ast_nodes.push((*ast_node).clone());
             }
             Err(error) => {
-                return Err((error, source_buffer));
+                return ParseOutput {
+                    result: Err(error),
+                    source_text: source_buffer,
+                };
             }
         }
     }
     
-    Ok((ast_nodes, source_buffer))
+    ParseOutput {
+        result: Ok(ast_nodes),
+        source_text: source_buffer,
+    }
 }
 ```
 
