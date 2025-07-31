@@ -1,6 +1,6 @@
 # 词法分析器设计
 
-状态：Draft-1
+状态：Draft-2
 
 ## 概述
 
@@ -161,7 +161,7 @@ impl TokenType {
 
 ### 问题：内部状态管理和迭代器实现策略
 
-词法分析器的内部实现需要维护状态来跟踪位置信息、缓冲字符和错误恢复。主要考虑：
+词法分析器采用迭代器适配器模式，内部维护必要的状态来跟踪位置信息和支持字符前瞻：
 
 **状态结构设计**：
 ```rust
@@ -169,20 +169,24 @@ impl TokenType {
 struct LexerState<I: Iterator<Item = char>> {
     chars: Peekable<I>,
     current_pos: Position,
-    errors: Vec<LexError>,
-    peeked_tokens: VecDeque<Token>, // 用于 lookahead
 }
 ```
 
-**迭代器适配器实现**：
-- 使用 `Peekable<Iterator<char>>` 支持字符前瞻
+**简化设计理念**：
+- 移除错误收集器：错误通过 Iterator<Result<Token, LexError>> 直接返回
+- 移除 Token 缓冲：不需要前瞻 Token，只需要字符前瞻
+- 简化状态：只保留位置跟踪和字符流状态
+
+**迭代器实现策略**：
+- 使用 `Peekable<Iterator<char>>` 支持单字符前瞻
 - 状态机驱动的 Token 识别逻辑
-- 错误恢复时的同步点选择策略
+- 每次 `next()` 调用产生一个 `Result<Token, LexError>`
+- MVP 不做错误恢复，遇到错误直接返回
 
 **关键权衡**：
-- 内存效率 vs 前瞻能力
-- 错误恢复粒度 vs 性能开销
-- 流式处理 vs 随机访问能力
+- 简洁性优先：减少内部状态复杂度
+- 流式处理：支持大文件的逐步解析
+- 内存效率：避免不必要的缓冲和状态
 
 ### 问题：状态操作函数的内部组织
 
@@ -248,6 +252,5 @@ MVP 暂不考虑
 - 内存使用 vs 计算复杂度：优先减少存储开销
 - Unicode 字符处理：正确处理多字节字符的位置推进
 
-TODO
 
 
