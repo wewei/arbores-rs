@@ -291,7 +291,7 @@ mod tests {
         
         // 过滤掉空白和 EOF 后，应该有 2 个数字
         let numbers: Vec<_> = tokens.iter()
-            .filter(|token| matches!(token.token_type, TokenType::Number(_)))
+            .filter(|token| matches!(token.token_type, TokenType::Integer(_) | TokenType::Float(_)))
             .collect();
         
         assert_eq!(numbers.len(), 2);

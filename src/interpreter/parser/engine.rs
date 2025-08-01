@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn test_parse_simple_atom() {
         let tokens = vec![
-            create_test_token(TokenType::Number(42.0), 0, "42"),
+            create_test_token(TokenType::Integer(42), 0, "42"),
         ];
         
         let result = parse(tokens.into_iter());
@@ -302,7 +302,7 @@ mod tests {
             create_test_token(TokenType::LeftParen, 0, "("),
             create_test_token(TokenType::Symbol("define".to_string()), 1, "define"),
             create_test_token(TokenType::Symbol("x".to_string()), 8, "x"),
-            create_test_token(TokenType::Number(42.0), 10, "42"),
+            create_test_token(TokenType::Integer(42), 10, "42"),
             create_test_token(TokenType::RightParen, 12, ")"),
         ];
         

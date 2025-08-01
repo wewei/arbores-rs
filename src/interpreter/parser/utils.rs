@@ -94,14 +94,8 @@ impl SourceBuilder {
     /// 将 token 转换为文本表示
     fn token_to_text(&self, token: &Token) -> String {
         match &token.token_type {
-            TokenType::Number(n) => {
-                // 对于整数，不显示小数点
-                if n.fract() == 0.0 {
-                    format!("{}", *n as i64)
-                } else {
-                    format!("{}", n)
-                }
-            },
+            TokenType::Integer(n) => format!("{}", n),
+            TokenType::Float(n) => format!("{}", n),
             TokenType::String(s) => format!("\"{}\"", escape_string(s)),
             TokenType::Character(c) => format!("#\\{}", c),
             TokenType::Boolean(true) => "#t".to_string(),
@@ -145,7 +139,8 @@ fn escape_string(s: &str) -> String {
 /// 从 TokenType 创建对应的 Value
 pub fn token_to_value(token_type: TokenType) -> Option<Value> {
     match token_type {
-        TokenType::Number(n) => Some(Value::Number(n)),
+        TokenType::Integer(n) => Some(Value::Number(n as f64)),
+        TokenType::Float(n) => Some(Value::Number(n)),
         TokenType::String(s) => Some(Value::String(s)),
         TokenType::Character(c) => Some(Value::Character(c)),
         TokenType::Boolean(b) => Some(Value::Boolean(b)),
@@ -157,7 +152,8 @@ pub fn token_to_value(token_type: TokenType) -> Option<Value> {
 /// 判断 TokenType 是否表示原子值
 pub fn is_atom_token(token_type: &TokenType) -> bool {
     matches!(token_type,
-        TokenType::Number(_) |
+        TokenType::Integer(_) |
+        TokenType::Float(_) |
         TokenType::String(_) |
         TokenType::Character(_) |
         TokenType::Boolean(_) |
@@ -258,7 +254,7 @@ mod tests {
             "x".to_string(),
         );
         let token4 = Token::new(
-            TokenType::Number(42.0),
+            TokenType::Integer(42),
             Span::new(10, 12),
             "42".to_string(),
         );
@@ -281,8 +277,12 @@ mod tests {
     #[test]
     fn test_token_to_value() {
         assert_eq!(
-            token_to_value(TokenType::Number(42.0)),
+            token_to_value(TokenType::Integer(42)),
             Some(Value::Number(42.0))
+        );
+        assert_eq!(
+            token_to_value(TokenType::Float(3.14)),
+            Some(Value::Number(3.14))
         );
         assert_eq!(
             token_to_value(TokenType::String("hello".to_string())),
@@ -300,7 +300,8 @@ mod tests {
 
     #[test]
     fn test_is_atom_token() {
-        assert!(is_atom_token(&TokenType::Number(42.0)));
+        assert!(is_atom_token(&TokenType::Integer(42)));
+        assert!(is_atom_token(&TokenType::Float(3.14)));
         assert!(is_atom_token(&TokenType::String("hello".to_string())));
         assert!(is_atom_token(&TokenType::Symbol("x".to_string())));
         assert!(!is_atom_token(&TokenType::LeftParen));

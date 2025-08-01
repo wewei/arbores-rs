@@ -11,7 +11,8 @@ use crate::interpreter::lexer::char_stream::CharStream;
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
     // 字面量值
-    Number(f64),
+    Integer(i64),           // 整数
+    Float(f64),             // 浮点数
     String(String),
     Character(char),
     Boolean(bool),
@@ -342,7 +343,8 @@ mod tests {
         assert!(TokenType::Newline.is_trivia());
         assert!(TokenType::Comment("comment".to_string()).is_trivia());
         
-        assert!(!TokenType::Number(42.0).is_trivia());
+        assert!(!TokenType::Integer(42).is_trivia());
+        assert!(!TokenType::Float(42.0).is_trivia());
         assert!(!TokenType::Symbol("symbol".to_string()).is_trivia());
         assert!(!TokenType::LeftParen.is_trivia());
     }
@@ -351,9 +353,9 @@ mod tests {
     fn test_token_creation() {
         let text = "42";
         let start = 10;
-        let token = Token::from_text(TokenType::Number(42.0), text, start);
+        let token = Token::from_text(TokenType::Integer(42), text, start);
         
-        assert_eq!(token.token_type, TokenType::Number(42.0));
+        assert_eq!(token.token_type, TokenType::Integer(42));
         assert_eq!(token.span.start, start);
         assert_eq!(token.span.end, start + 2);
         assert_eq!(token.raw_text, "42");

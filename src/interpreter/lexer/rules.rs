@@ -19,6 +19,10 @@ pub const STATE_SYMBOL: usize = 4;
 pub const STATE_COMMENT: usize = 5;
 pub const STATE_WHITESPACE: usize = 6;
 pub const STATE_CHARACTER: usize = 7;
+pub const STATE_NUMBER_SIGN: usize = 8;    // 处理数字的正负号
+pub const STATE_NUMBER_DECIMAL: usize = 9; // 处理小数点后的数字
+pub const STATE_NUMBER_EXP: usize = 10;    // 处理科学计数法的指数部分
+pub const STATE_NUMBER_EXP_SIGN: usize = 11; // 处理指数的正负号
 
 // ============================================================================
 // Token 生成器函数 - 纯函数实现
@@ -26,19 +30,59 @@ pub const STATE_CHARACTER: usize = 7;
 
 /// 生成数字 Token
 pub fn emit_number(raw_text: &str, position: usize) -> Result<Token, LexError> {
-    match raw_text.parse::<f64>() {
-        Ok(value) => Ok(Token::from_text(
-            TokenType::Number(value),
-            raw_text,
-            position,
-        )),
-        Err(_) => Err(LexError::new(
-            position,
-            None,
-            LexErrorReason::InvalidNumber {
-                partial_text: raw_text.to_string(),
-            },
-        )),
+    parse_number(raw_text, position)
+}
+
+/// 解析数值字面量，支持整数、浮点数和科学计数法
+fn parse_number(raw_text: &str, position: usize) -> Result<Token, LexError> {
+    let text = raw_text.trim();
+    
+    // 检查是否包含小数点或科学计数法标记
+    let has_decimal = text.contains('.');
+    let has_exponent = text.contains('e') || text.contains('E');
+    
+    if has_decimal || has_exponent {
+        // 解析为浮点数
+        match text.parse::<f64>() {
+            Ok(value) => Ok(Token::from_text(
+                TokenType::Float(value),
+                raw_text,
+                position,
+            )),
+            Err(_) => Err(LexError::new(
+                position,
+                None,
+                LexErrorReason::InvalidNumber {
+                    partial_text: raw_text.to_string(),
+                },
+            )),
+        }
+    } else {
+        // 解析为整数
+        match text.parse::<i64>() {
+            Ok(value) => Ok(Token::from_text(
+                TokenType::Integer(value),
+                raw_text,
+                position,
+            )),
+            Err(_) => {
+                // 如果整数解析失败，尝试作为浮点数
+                match text.parse::<f64>() {
+                    Ok(value) => Ok(Token::from_text(
+                        TokenType::Float(value),
+                        raw_text,
+                        position,
+                    )),
+                    Err(_) => Err(LexError::new(
+                        position,
+                        None,
+                        LexErrorReason::InvalidNumber {
+                            partial_text: raw_text.to_string(),
+                        },
+                    )),
+                }
+            }
+        }
     }
 }
 
@@ -248,9 +292,19 @@ fn process_string_escapes(content: &str, position: usize) -> Result<String, LexE
 // 字符类判断函数
 // ============================================================================
 
-/// 判断是否为数字字符（包括小数点）
+/// 判断是否为数字字符（仅限0-9）
+pub fn is_digit_char(ch: char) -> bool {
+    ch.is_ascii_digit()
+}
+
+/// 判断是否为数字的起始字符（数字或正负号）
+pub fn is_number_start_char(ch: char) -> bool {
+    ch.is_ascii_digit() || ch == '-' || ch == '+'
+}
+
+/// 判断是否为数字中可能出现的字符（包括小数点和科学计数法）
 pub fn is_number_char(ch: char) -> bool {
-    ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == '+'
+    ch.is_ascii_digit() || ch == '.' || ch == 'e' || ch == 'E' || ch == '-' || ch == '+'
 }
 
 /// 判断是否为符号的起始字符
@@ -358,23 +412,38 @@ pub fn get_scheme_state_machine() -> StateMachine {
                     Pattern::String("#\\"),
                     StateAction::new(STATE_CHARACTER, None)
                 ),
-                // 数字开始
+                // 数字开始（正负号）
                 TransitionRule::new(
-                    Pattern::CharClass(|c| c.is_ascii_digit()),
+                    Pattern::CharClass(|c| c == '+' || c == '-'),
+                    StateAction::new(STATE_NUMBER_SIGN, None)
+                ),
+                // 数字开始（数字）
+                TransitionRule::new(
+                    Pattern::CharClass(is_digit_char),
                     StateAction::new(STATE_NUMBER, None)
                 ),
-                // 符号开始
+                // 符号开始（但不是数字符号）
                 TransitionRule::new(
-                    Pattern::CharClass(is_symbol_start_char),
+                    Pattern::CharClass(|c| is_symbol_start_char(c) && c != '+' && c != '-'),
                     StateAction::new(STATE_SYMBOL, None)
                 ),
             ],
             
             // STATE_NUMBER (1) 的规则
             vec![
+                // 小数点
+                TransitionRule::new(
+                    Pattern::Char('.'),
+                    StateAction::new(STATE_NUMBER_DECIMAL, None)
+                ),
+                // 科学计数法标记
+                TransitionRule::new(
+                    Pattern::CharClass(|c| c == 'e' || c == 'E'),
+                    StateAction::new(STATE_NUMBER_EXP, None)
+                ),
                 // 继续收集数字字符
                 TransitionRule::new(
-                    Pattern::CharClass(is_number_char),
+                    Pattern::CharClass(is_digit_char),
                     StateAction::new(STATE_NUMBER, None)
                 ),
             ],
@@ -452,6 +521,53 @@ pub fn get_scheme_state_machine() -> StateMachine {
                     StateAction::new(STATE_INITIAL, Some(emit_character))
                 ),
             ],
+            
+            // STATE_NUMBER_SIGN (8) 的规则 - 处理正负号后面的数字
+            vec![
+                // 正负号后跟数字
+                TransitionRule::new(
+                    Pattern::CharClass(is_digit_char),
+                    StateAction::new(STATE_NUMBER, None)
+                ),
+                // 如果正负号后面不是数字，则作为符号处理
+            ],
+            
+            // STATE_NUMBER_DECIMAL (9) 的规则 - 处理小数点后的数字
+            vec![
+                // 小数点后的数字
+                TransitionRule::new(
+                    Pattern::CharClass(is_digit_char),
+                    StateAction::new(STATE_NUMBER_DECIMAL, None)
+                ),
+                // 科学计数法标记
+                TransitionRule::new(
+                    Pattern::CharClass(|c| c == 'e' || c == 'E'),
+                    StateAction::new(STATE_NUMBER_EXP, None)
+                ),
+            ],
+            
+            // STATE_NUMBER_EXP (10) 的规则 - 处理科学计数法的指数部分
+            vec![
+                // 指数后的正负号
+                TransitionRule::new(
+                    Pattern::CharClass(|c| c == '+' || c == '-'),
+                    StateAction::new(STATE_NUMBER_EXP_SIGN, None)
+                ),
+                // 指数后直接跟数字
+                TransitionRule::new(
+                    Pattern::CharClass(is_digit_char),
+                    StateAction::new(STATE_NUMBER_EXP, None)
+                ),
+            ],
+            
+            // STATE_NUMBER_EXP_SIGN (11) 的规则 - 处理指数的正负号
+            vec![
+                // 正负号后跟数字
+                TransitionRule::new(
+                    Pattern::CharClass(is_digit_char),
+                    StateAction::new(STATE_NUMBER_EXP, None)
+                ),
+            ],
         ],
         
         fallback_rules: vec![
@@ -471,6 +587,14 @@ pub fn get_scheme_state_machine() -> StateMachine {
             StateAction::new(STATE_INITIAL, Some(emit_whitespace)),
             // STATE_CHARACTER 的 fallback - 字符结束
             StateAction::new(STATE_INITIAL, Some(emit_character)),
+            // STATE_NUMBER_SIGN 的 fallback - 如果正负号后面不是数字，作为符号处理
+            StateAction::new(STATE_INITIAL, Some(emit_symbol)),
+            // STATE_NUMBER_DECIMAL 的 fallback - 小数结束
+            StateAction::new(STATE_INITIAL, Some(emit_number)),
+            // STATE_NUMBER_EXP 的 fallback - 科学计数法结束
+            StateAction::new(STATE_INITIAL, Some(emit_number)),
+            // STATE_NUMBER_EXP_SIGN 的 fallback - 指数符号必须后跟数字，否则错误
+            StateAction::new(STATE_INITIAL, Some(emit_error)),
         ],
     }
 }
@@ -483,13 +607,31 @@ mod tests {
     fn test_emit_number() {
         let pos = 0;
         
+        // 测试整数
         let result = emit_number("42", pos).unwrap();
-        assert_eq!(result.token_type, TokenType::Number(42.0));
+        assert_eq!(result.token_type, TokenType::Integer(42));
         assert_eq!(result.raw_text, "42");
         
-        let result = emit_number("3.14", pos).unwrap();
-        assert_eq!(result.token_type, TokenType::Number(3.14));
+        // 测试负整数
+        let result = emit_number("-123", pos).unwrap();
+        assert_eq!(result.token_type, TokenType::Integer(-123));
         
+        // 测试浮点数
+        let result = emit_number("3.14", pos).unwrap();
+        assert_eq!(result.token_type, TokenType::Float(3.14));
+        
+        // 测试负浮点数
+        let result = emit_number("-123.45", pos).unwrap();
+        assert_eq!(result.token_type, TokenType::Float(-123.45));
+        
+        // 测试科学计数法
+        let result = emit_number("1.23e4", pos).unwrap();
+        assert_eq!(result.token_type, TokenType::Float(1.23e4));
+        
+        let result = emit_number("-2.5E-3", pos).unwrap();
+        assert_eq!(result.token_type, TokenType::Float(-2.5E-3));
+        
+        // 测试无效数字
         let result = emit_number("invalid", pos);
         assert!(result.is_err());
     }
@@ -524,8 +666,22 @@ mod tests {
 
     #[test]
     fn test_character_predicates() {
+        assert!(is_digit_char('0'));
+        assert!(is_digit_char('9'));
+        assert!(!is_digit_char('a'));
+        assert!(!is_digit_char('.'));
+        
+        assert!(is_number_start_char('0'));
+        assert!(is_number_start_char('+'));
+        assert!(is_number_start_char('-'));
+        assert!(!is_number_start_char('a'));
+        
         assert!(is_number_char('0'));
         assert!(is_number_char('.'));
+        assert!(is_number_char('e'));
+        assert!(is_number_char('E'));
+        assert!(is_number_char('+'));
+        assert!(is_number_char('-'));
         assert!(!is_number_char('a'));
         
         assert!(is_symbol_start_char('a'));
