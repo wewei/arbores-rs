@@ -35,7 +35,17 @@ impl SourceBuilder {
     }
     
     /// 添加一个 token 到重建的源代码中
+    /// 
+    /// 使用 Token 的 raw_text 字段来重建源代码，确保保持原始文本格式，
+    /// 避免 span 错位问题。例如 "+1" 和 "1" 会保持原始表示形式。
     pub fn add_token(&mut self, token: &Token) {
+        // 对于 Trivia tokens（空白、换行、注释），直接添加原始文本
+        if token.token_type.is_trivia() {
+            self.text.push_str(token.raw_text());
+            // Trivia tokens 不影响空格状态
+            return;
+        }
+        
         // 根据 token 类型决定是否需要空格分隔
         let needs_spacing = self.should_add_space(&token.token_type);
         
@@ -43,8 +53,8 @@ impl SourceBuilder {
             self.text.push(' ');
         }
         
-        // 添加 token 的文本内容
-        self.text.push_str(&self.token_to_text(token));
+        // 直接使用 token 的原始文本内容，避免重新构造导致的格式丢失
+        self.text.push_str(token.raw_text());
         
         // 更新下次是否需要空格的状态
         self.need_space = self.should_space_after(&token.token_type);
@@ -91,52 +101,11 @@ impl SourceBuilder {
             TokenType::Comment(_)
         )
     }
-    
-    /// 将 token 转换为文本表示
-    fn token_to_text(&self, token: &Token) -> String {
-        match &token.token_type {
-            TokenType::Integer(n) => format!("{}", n),
-            TokenType::Float(n) => format!("{}", n),
-            TokenType::String(s) => format!("\"{}\"", escape_string(s)),
-            TokenType::Character(c) => format!("#\\{}", c),
-            TokenType::Boolean(true) => "#t".to_string(),
-            TokenType::Boolean(false) => "#f".to_string(),
-            TokenType::Symbol(s) => s.clone(),
-            TokenType::LeftParen => "(".to_string(),
-            TokenType::RightParen => ")".to_string(),
-            TokenType::LeftBracket => "[".to_string(),
-            TokenType::RightBracket => "]".to_string(),
-            TokenType::VectorStart => "#(".to_string(),
-            TokenType::Quote => "'".to_string(),
-            TokenType::Quasiquote => "`".to_string(),
-            TokenType::Unquote => ",".to_string(),
-            TokenType::UnquoteSplicing => ",@".to_string(),
-            TokenType::Dot => ".".to_string(),
-            TokenType::Whitespace(s) => s.clone(),
-            TokenType::Newline => "\n".to_string(),
-            TokenType::Comment(s) => format!(";{}", s),
-            TokenType::Eof => String::new(),
-        }
-    }
 }
 
 // ============================================================================
 // 辅助函数
 // ============================================================================
-
-/// 转义字符串中的特殊字符
-fn escape_string(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            '"' => "\\\"".to_string(),
-            '\\' => "\\\\".to_string(),
-            '\n' => "\\n".to_string(),
-            '\t' => "\\t".to_string(),
-            '\r' => "\\r".to_string(),
-            c => c.to_string(),
-        })
-        .collect()
-}
 
 /// 从 TokenType 创建对应的 Value
 pub fn token_to_value(token_type: TokenType) -> Option<Value> {
@@ -277,6 +246,86 @@ mod tests {
     }
 
     #[test]
+    fn test_source_builder_preserves_original_text() {
+        let mut builder = SourceBuilder::new();
+        
+        // 测试原始文本保留：+1 应该保持为 "+1" 而不是 "1"
+        let token_plus_one = Token::new(
+            TokenType::Integer(1),
+            Span::new(0, 2),
+            "+1".to_string(),  // 原始文本是 "+1"
+        );
+        
+        // 测试布尔值的不同表示形式
+        let token_true_short = Token::new(
+            TokenType::Boolean(true),
+            Span::new(3, 5),
+            "#t".to_string(),  // 原始文本是短形式
+        );
+        
+        // 测试浮点数的不同表示形式
+        let token_float = Token::new(
+            TokenType::Float(1.0),
+            Span::new(6, 10),
+            "1.00".to_string(),  // 原始文本保留小数点后的零
+        );
+        
+        builder.add_token(&token_plus_one);
+        builder.add_token(&token_true_short);
+        builder.add_token(&token_float);
+        
+        let result = builder.build();
+        // 验证原始文本格式被保留
+        assert_eq!(result, "+1 #t 1.00");
+    }
+
+    #[test]
+    fn test_source_builder_with_trivia_tokens() {
+        let mut builder = SourceBuilder::new();
+        
+        let token1 = Token::new(
+            TokenType::LeftParen,
+            Span::new(0, 1),
+            "(".to_string(),
+        );
+        let whitespace = Token::new(
+            TokenType::Whitespace("  ".to_string()),
+            Span::new(1, 3),
+            "  ".to_string(),
+        );
+        let token2 = Token::new(
+            TokenType::Symbol("x".to_string()),
+            Span::new(3, 4),
+            "x".to_string(),
+        );
+        let comment = Token::new(
+            TokenType::Comment(" this is x".to_string()),
+            Span::new(4, 16),
+            "; this is x".to_string(),
+        );
+        let newline = Token::new(
+            TokenType::Newline,
+            Span::new(16, 17),
+            "\n".to_string(),
+        );
+        let token3 = Token::new(
+            TokenType::RightParen,
+            Span::new(17, 18),
+            ")".to_string(),
+        );
+        
+        builder.add_token(&token1);
+        builder.add_token(&whitespace);
+        builder.add_token(&token2);
+        builder.add_token(&comment);
+        builder.add_token(&newline);
+        builder.add_token(&token3);
+        
+        let result = builder.build();
+        assert_eq!(result, "(  x; this is x\n)");
+    }
+
+    #[test]
     fn test_token_to_value() {
         assert_eq!(
             token_to_value(TokenType::Integer(42)),
@@ -308,13 +357,5 @@ mod tests {
         assert!(is_atom_token(&TokenType::Symbol("x".to_string())));
         assert!(!is_atom_token(&TokenType::LeftParen));
         assert!(!is_atom_token(&TokenType::Quote));
-    }
-
-    #[test]
-    fn test_escape_string() {
-        assert_eq!(escape_string("hello"), "hello");
-        assert_eq!(escape_string("hello\"world"), "hello\\\"world");
-        assert_eq!(escape_string("line1\nline2"), "line1\\nline2");
-        assert_eq!(escape_string("tab\there"), "tab\\there");
     }
 }

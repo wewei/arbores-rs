@@ -44,11 +44,16 @@ pub enum TokenType {
 }
 
 /// 带位置信息的词法单元 - 纯数据结构
+/// 
+/// 重要设计说明：
+/// - `raw_text` 字段保存 Token 的原始文本表示，用于精确的源码重建
+/// - 即使语义相同的 Token（如 `+1` 和 `1`），其 `raw_text` 也会保持原始形式
+/// - 这确保了 parser 重建源码时不会产生 span 错位问题
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
     pub span: Span,             // Token 位置范围
-    pub raw_text: String,       // 原始文本内容
+    pub raw_text: String,       // 原始文本内容 - 用于精确源码重建
 }
 
 /// 词法分析错误 - 统一的错误结构
@@ -191,6 +196,21 @@ impl Token {
     /// 获取Token的长度（字符数）
     pub fn len(&self) -> usize {
         self.span.len()
+    }
+    
+    /// 获取原始文本内容
+    /// 
+    /// 这个方法返回 Token 的原始文本表示，主要用于：
+    /// - 源码重建：保持原始格式，避免 span 错位
+    /// - 调试和错误报告
+    /// - 语法高亮等需要原始文本的功能
+    pub fn raw_text(&self) -> &str {
+        &self.raw_text
+    }
+    
+    /// 检查 Token 是否为空（无文本内容）
+    pub fn is_empty(&self) -> bool {
+        self.raw_text.is_empty()
     }
 }
 
@@ -378,5 +398,58 @@ mod tests {
         assert_eq!(error.found_char, Some('!'));
         assert_eq!(error.found_text(), "!");
         assert_eq!(error.position(), pos);
+    }
+
+    #[test]
+    fn test_token_raw_text_preservation() {
+        // 测试原始文本保存功能，确保不同的文本表示被正确保留
+        
+        // 情况1: +1 和 1 在语义上相同，但原始文本不同
+        let token_plus_one = Token::from_text(TokenType::Integer(1), "+1", 0);
+        let token_one = Token::from_text(TokenType::Integer(1), "1", 0);
+        
+        // 语义相同
+        assert_eq!(token_plus_one.token_type, token_one.token_type);
+        
+        // 但原始文本不同
+        assert_eq!(token_plus_one.raw_text(), "+1");
+        assert_eq!(token_one.raw_text(), "1");
+        assert_ne!(token_plus_one.raw_text(), token_one.raw_text());
+        
+        // 情况2: 布尔值的不同表示
+        let token_true_short = Token::from_text(TokenType::Boolean(true), "#t", 0);
+        let token_true_long = Token::from_text(TokenType::Boolean(true), "#true", 0);
+        
+        // 语义相同
+        assert_eq!(token_true_short.token_type, token_true_long.token_type);
+        
+        // 但原始文本不同
+        assert_eq!(token_true_short.raw_text(), "#t");
+        assert_eq!(token_true_long.raw_text(), "#true");
+        
+        // 情况3: 浮点数的不同表示
+        let token_float1 = Token::from_text(TokenType::Float(1.0), "1.0", 0);
+        let token_float2 = Token::from_text(TokenType::Float(1.0), "1.00", 0);
+        
+        // 语义相同
+        assert_eq!(token_float1.token_type, token_float2.token_type);
+        
+        // 但原始文本不同
+        assert_eq!(token_float1.raw_text(), "1.0");
+        assert_eq!(token_float2.raw_text(), "1.00");
+    }
+
+    #[test]
+    fn test_token_utility_methods() {
+        let token = Token::from_text(TokenType::Symbol("test".to_string()), "test", 5);
+        
+        assert_eq!(token.raw_text(), "test");
+        assert!(!token.is_empty());
+        assert_eq!(token.len(), 4);
+        
+        // 测试空 Token
+        let empty_token = Token::from_text(TokenType::Symbol("".to_string()), "", 0);
+        assert!(empty_token.is_empty());
+        assert_eq!(empty_token.len(), 0);
     }
 }
