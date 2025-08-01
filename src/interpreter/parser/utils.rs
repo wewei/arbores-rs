@@ -1,9 +1,10 @@
 //! 语法分析器辅助工具
 //! 
 //! 本模块提供语法分析器的辅助功能，包括：
-//! - 源代码重建工具
+//! - 源代码重建工具（SourceBuilder）
 //! - 位置信息处理函数
 //! - 通用验证和转换函数
+//! - AST 构建辅助函数
 
 use crate::interpreter::lexer::types::{Token, TokenType};
 use super::types::{SExpr, SExprContent, Value};

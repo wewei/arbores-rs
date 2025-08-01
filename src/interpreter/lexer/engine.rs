@@ -50,11 +50,10 @@ impl<I: Iterator<Item = char>> Iterator for LexerIterator<I> {
             if !self.state.buffer.is_empty() {
                 let fallback = &self.state.state_machine.fallback_rules[self.state.state];
                 if let Some(emitter) = fallback.emit_token {
-                    let token_start_pos = self.state.current_pos;
                     let buffer_copy = self.state.buffer.clone();
                     self.state.buffer.clear();
                     self.state.state = fallback.next_state;
-                    return Some(emitter(&buffer_copy, token_start_pos));
+                    return Some(emitter(&buffer_copy, self.state.token_start_pos));
                 } else {
                     // 如果 fallback 不生成 Token，清空缓冲区并继续
                     self.state.buffer.clear();
@@ -148,8 +147,10 @@ fn execute_transition<I: Iterator<Item = char>>(
     state: &mut LexerState<I>,
     rule: &TransitionRule
 ) -> Option<Result<Token, LexError>> {
-    // 先记录 Token 起始位置（在消费字符之前）
-    let token_start_pos = state.current_pos;
+    // 如果缓冲区为空，这是新 token 的开始，记录起始位置
+    if state.buffer.is_empty() {
+        state.token_start_pos = state.current_pos;
+    }
     
     // 使用 pattern_matcher 消费匹配的字符
     let match_result = match_pattern(&mut state.chars, &rule.pattern);
@@ -173,7 +174,7 @@ fn execute_transition<I: Iterator<Item = char>>(
                 state.state = rule.action.next_state;
                 
                 // 生成 Token
-                Some(emitter(&buffer_copy, token_start_pos))
+                Some(emitter(&buffer_copy, state.token_start_pos))
             } else {
                 // 只是状态转移，不生成 Token
                 state.state = rule.action.next_state;
@@ -199,9 +200,8 @@ fn execute_fallback<I: Iterator<Item = char>>(
 ) -> Option<Result<Token, LexError>> {
     // 如果有 emit_token，先生成 Token
     let token_result = if let Some(emitter) = fallback.emit_token {
-        let token_start_pos = state.current_pos;
         let buffer_copy = state.buffer.clone();
-        Some(emitter(&buffer_copy, token_start_pos))
+        Some(emitter(&buffer_copy, state.token_start_pos))
     } else {
         None
     };
@@ -379,8 +379,8 @@ mod tests {
         assert!(world_token.is_some());
         let world_token = world_token.unwrap();
         
-        // "world" 实际上在位置 11 处开始（基于实际的词法分析器行为）
-        assert_eq!(world_token.span.start, 11);
+        // "world" 应该在位置 6 处开始（"hello\n" 之后）
+        assert_eq!(world_token.span.start, 6);
     }
 
     #[test]

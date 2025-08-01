@@ -65,6 +65,7 @@ pub use utils::{SourceBuilder, token_to_value, is_atom_token};
 mod types;
 mod engine;
 mod utils;
+mod display;
 
 // ============================================================================
 // 便利函数

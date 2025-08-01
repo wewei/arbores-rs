@@ -131,6 +131,7 @@ pub struct StateMachine {
 pub struct LexerState<I: Iterator<Item = char>> {
     pub chars: CharStream<I>,               // 字符流，支持前瞻
     pub current_pos: usize,                 // 当前字符偏移量位置
+    pub token_start_pos: usize,             // 当前 token 的开始位置
     pub state: usize,                       // 当前状态机状态
     pub buffer: String,                     // 缓冲的字符串
     pub state_machine: &'static StateMachine, // 状态机规则集
@@ -253,6 +254,7 @@ impl<I: Iterator<Item = char>> LexerState<I> {
         Self {
             chars: CharStream::new(chars),
             current_pos: 0, // 从字符偏移量 0 开始
+            token_start_pos: 0, // token 开始位置初始化为 0
             state: 0, // 从初始状态开始
             buffer: String::new(),
             state_machine,
