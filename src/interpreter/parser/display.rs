@@ -72,17 +72,17 @@ impl SExpr {
         match &self.content {
             SExprContent::Atom(value) => {
                 result.push_str(&format!("{}", value));
-                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
             },
             SExprContent::Nil => {
                 result.push_str("()");
-                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
             },
             SExprContent::Cons { car, cdr } => {
                 result.push('(');
                 self.fmt_cons_pretty_to_string(result, car, cdr, indent + 1);
                 result.push(')');
-                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
             },
             SExprContent::Vector(elements) => {
                 result.push_str("#(");
@@ -93,7 +93,7 @@ impl SExpr {
                     result.push_str(&format!("{}", element)); // vector 元素紧凑显示
                 }
                 result.push(')');
-                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
             },
         }
     }
@@ -159,7 +159,7 @@ impl SExpr {
 
     /// 写入位置信息注释
     fn write_position_comment(&self, f: &mut Formatter<'_>, indent: usize, inline: bool) -> fmt::Result {
-        write!(f, ";{{{},{}}}", self.span.start, self.span.end)?;
+        write!(f, " #; ({} {})", self.span.start, self.span.end)?;
         
         if !inline {
             // 换行并添加缩进
@@ -248,20 +248,20 @@ mod tests {
             SExprContent::Atom(Value::Number(42.0)),
             span,
         );
-        assert_eq!(format!("{}", number), "42;{0,5}");
+        assert_eq!(format!("{}", number), "42 #; (0 5)");
 
         let symbol = SExpr::with_span(
             SExprContent::Atom(Value::Symbol("hello".to_string())),
             span,
         );
-        assert_eq!(format!("{}", symbol), "hello;{0,5}");
+        assert_eq!(format!("{}", symbol), "hello #; (0 5)");
     }
 
     #[test]
     fn test_nil_display() {
         let span = Span::new(0, 2);
         let nil = SExpr::with_span(SExprContent::Nil, span);
-        assert_eq!(format!("{}", nil), "();{0,2}");
+        assert_eq!(format!("{}", nil), "() #; (0 2)");
     }
 
     #[test]
@@ -290,7 +290,7 @@ mod tests {
             span_list,
         );
         
-        assert_eq!(format!("{}", list), "(1;{1,2} 2;{3,4});{0,5}");
+        assert_eq!(format!("{}", list), "(1 #; (1 2) 2 #; (3 4)) #; (0 5)");
     }
 
     #[test]
@@ -313,7 +313,7 @@ mod tests {
             span_pair,
         );
         
-        assert_eq!(format!("{}", pair), "(1;{1,2} . 2;{5,6});{0,7}");
+        assert_eq!(format!("{}", pair), "(1 #; (1 2) . 2 #; (5 6)) #; (0 7)");
     }
 
     #[test]
@@ -336,7 +336,7 @@ mod tests {
             span_vector,
         );
         
-        assert_eq!(format!("{}", vector), "#(1;{2,3} 2;{4,5});{0,6}");
+        assert_eq!(format!("{}", vector), "#(1 #; (2 3) 2 #; (4 5)) #; (0 6)");
     }
 
     #[test]
@@ -346,7 +346,7 @@ mod tests {
             SExprContent::Atom(Value::String("hello \"world\"".to_string())),
             span,
         );
-        assert_eq!(format!("{}", string_with_quotes), "\"hello \\\"world\\\"\";{0,10}");
+        assert_eq!(format!("{}", string_with_quotes), "\"hello \\\"world\\\"\" #; (0 10)");
     }
 
     #[test]
@@ -357,19 +357,19 @@ mod tests {
             SExprContent::Atom(Value::Character(' ')),
             span,
         );
-        assert_eq!(format!("{}", space_char), "#\\space;{0,3}");
+        assert_eq!(format!("{}", space_char), "#\\space #; (0 3)");
         
         let newline_char = SExpr::with_span(
             SExprContent::Atom(Value::Character('\n')),
             span,
         );
-        assert_eq!(format!("{}", newline_char), "#\\newline;{0,3}");
+        assert_eq!(format!("{}", newline_char), "#\\newline #; (0 3)");
         
         let regular_char = SExpr::with_span(
             SExprContent::Atom(Value::Character('a')),
             span,
         );
-        assert_eq!(format!("{}", regular_char), "#\\a;{0,3}");
+        assert_eq!(format!("{}", regular_char), "#\\a #; (0 3)");
     }
 
     #[test]
@@ -380,13 +380,13 @@ mod tests {
             SExprContent::Atom(Value::Boolean(true)),
             span,
         );
-        assert_eq!(format!("{}", true_val), "#t;{0,2}");
+        assert_eq!(format!("{}", true_val), "#t #; (0 2)");
         
         let false_val = SExpr::with_span(
             SExprContent::Atom(Value::Boolean(false)),
             span,
         );
-        assert_eq!(format!("{}", false_val), "#f;{0,2}");
+        assert_eq!(format!("{}", false_val), "#f #; (0 2)");
     }
 
     #[test]
@@ -398,14 +398,14 @@ mod tests {
             SExprContent::Atom(Value::Number(42.0)),
             span,
         );
-        assert_eq!(format!("{}", integer), "42;{0,5}");
+        assert_eq!(format!("{}", integer), "42 #; (0 5)");
         
         // 小数应该显示小数点
         let float = SExpr::with_span(
             SExprContent::Atom(Value::Number(3.14)),
             span,
         );
-        assert_eq!(format!("{}", float), "3.14;{0,5}");
+        assert_eq!(format!("{}", float), "3.14 #; (0 5)");
     }
 
     #[test]
@@ -417,7 +417,7 @@ mod tests {
         );
         
         // 简单原子的美化输出应该与紧凑输出相同
-        assert_eq!(atom.to_pretty_string(), "42;{0,2}");
+        assert_eq!(atom.to_pretty_string(), "42 #; (0 2)");
     }
 
     #[test]
@@ -458,10 +458,10 @@ mod tests {
         let pretty = list_abc.to_pretty_string();
         // 美化输出应该包含换行和缩进
         assert!(pretty.contains('\n'));
-        assert!(pretty.contains("  a;{1,2}"));
-        assert!(pretty.contains("  b;{3,4}"));
-        assert!(pretty.contains("  c;{5,6}"));
-        assert!(pretty.ends_with(");{0,7}"));
+        assert!(pretty.contains("  a #; (1 2)"));
+        assert!(pretty.contains("  b #; (3 4)"));
+        assert!(pretty.contains("  c #; (5 6)"));
+        assert!(pretty.ends_with(") #; (0 7)"));
     }
 
     #[test]
@@ -512,8 +512,8 @@ mod tests {
         let pretty = outer_list.to_pretty_string();
         // 嵌套结构应该有多层缩进
         assert!(pretty.contains('\n'));
-        assert!(pretty.contains("  a;{1,2}"));
-        assert!(pretty.contains("    b;{4,5}"));
-        assert!(pretty.contains("    c;{6,7}"));
+        assert!(pretty.contains("  a #; (1 2)"));
+        assert!(pretty.contains("    b #; (4 5)"));
+        assert!(pretty.contains("    c #; (6 7)"));
     }
 }

@@ -30,7 +30,7 @@ mod generate_expected_outputs {
             let output = parse_from_string(input);
             match &output.result {
                 Ok(expressions) if expressions.len() == 1 => {
-                    let actual = format!("{}", expressions[0]);
+                    let actual = expressions[0].to_pretty_string();
                     println!("  - name: \"{}\"", name);
                     println!("    input: {:?}", input);
                     println!("    expected: {:?}", actual);

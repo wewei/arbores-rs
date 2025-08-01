@@ -51,11 +51,15 @@ fn run_test_case(test_case: &TestCase) -> Result<(), String> {
                 ));
             }
             
-            // 使用 Display trait 将 SExpr 转换为字符串
-            let actual_output = format!("{}", expressions[0]);
+            // 使用 pretty format 将 SExpr 转换为字符串
+            let actual_output = expressions[0].to_pretty_string();
+            
+            // YAML 的 "|" 块标量会在末尾保留换行符，我们需要去除以进行比较
+            let expected_trimmed = test_case.expected.trim_end();
+            let actual_trimmed = actual_output.trim_end();
             
             // 比较实际输出与预期输出
-            if actual_output == test_case.expected {
+            if actual_trimmed == expected_trimmed {
                 Ok(())
             } else {
                 Err(format!(

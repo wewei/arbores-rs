@@ -1,93 +1,138 @@
 # 基本表达式解析测试 fixture
-# 输入源代码 -> 解析为 SExpr -> Display 输出 -> 与预期字符串比对
+# 输入源代码 -> 解析为 SExpr -> Pretty Display 输出 -> 与预期字符串比对
 
 test_cases:
   - name: "simple_integer"
     description: "解析简单整数"
     input: "42"
-    expected: "42;{0,2}"
+    expected: "42 #; (0 2)"
 
   - name: "simple_float"
     description: "解析简单浮点数"
     input: "3.14"
-    expected: "3.14;{0,4}"
+    expected: "3.14 #; (0 4)"
 
   - name: "simple_string"
     description: "解析简单字符串"
     input: "\"hello\""
-    expected: "\"hello\";{0,7}"
+    expected: "\"hello\" #; (0 7)"
 
   - name: "simple_symbol"
     description: "解析简单符号"
     input: "foo"
-    expected: "foo;{0,3}"
+    expected: "foo #; (0 3)"
 
   - name: "boolean_true"
     description: "解析布尔值 true"
     input: "#t"
-    expected: "#t;{0,2}"
+    expected: "#t #; (0 2)"
 
   - name: "boolean_false"
     description: "解析布尔值 false"
     input: "#f"
-    expected: "#f;{0,2}"
+    expected: "#f #; (0 2)"
 
   - name: "character"
     description: "解析字符"
     input: "#\\a"
-    expected: "#\\a;{0,3}"
+    expected: "#\\a #; (0 3)"
 
   - name: "empty_list"
     description: "解析空列表"
     input: "()"
-    expected: "();{0,2}"
+    expected: "() #; (0 2)"
 
   - name: "simple_list"
     description: "解析简单列表"
     input: "(1 2 3)"
-    expected: "(1;{1,2} 2;{3,4} 3;{5,6});{0,7}"
+    expected: |
+      (
+        1 #; (1 2)
+        2 #; (3 4)
+        3 #; (5 6)
+      ) #; (0 7)
 
   - name: "nested_list"
     description: "解析嵌套列表"
     input: "(a (b c) d)"
-    expected: "(a;{1,2} (b;{4,5} c;{6,7});{3,8} d;{9,10});{0,11}"
+    expected: |
+      (
+        a #; (1 2)
+        (
+          b #; (4 5)
+          c #; (6 7)
+        ) #; (3 8)
+        d #; (9 10)
+      ) #; (0 11)
 
   - name: "quote_expression"
     description: "解析引用表达式"
     input: "'x"
-    expected: "(quote;{0,1} x;{1,2});{0,2}"
+    expected: |
+      (
+        quote #; (0 1)
+        x #; (1 2)
+      ) #; (0 2)
 
   - name: "quote_list"
     description: "解析引用列表"
     input: "'(a b)"
-    expected: "(quote;{0,1} (a;{2,3} b;{4,5});{1,6});{0,6}"
+    expected: |
+      (
+        quote #; (0 1)
+        (
+          a #; (2 3)
+          b #; (4 5)
+        ) #; (1 6)
+      ) #; (0 6)
 
   - name: "quasiquote_expression"
     description: "解析准引用表达式"
     input: "`x"
-    expected: "(quasiquote;{0,1} x;{1,2});{0,2}"
+    expected: |
+      (
+        quasiquote #; (0 1)
+        x #; (1 2)
+      ) #; (0 2)
 
   - name: "unquote_expression"
     description: "解析反引用表达式"
     input: ",x"
-    expected: "(unquote;{0,1} x;{1,2});{0,2}"
+    expected: |
+      (
+        unquote #; (0 1)
+        x #; (1 2)
+      ) #; (0 2)
 
   - name: "unquote_splicing"
     description: "解析反引用拼接"
     input: ",@x"
-    expected: "(unquote-splicing;{0,2} x;{2,3});{0,3}"
+    expected: |
+      (
+        unquote-splicing #; (0 2)
+        x #; (2 3)
+      ) #; (0 3)
 
   - name: "dotted_pair"
     description: "解析点对"
     input: "(a . b)"
-    expected: "(a;{1,2} . b;{0,0});{0,7}"
+    expected: |
+      (
+        a #; (1 2)
+        . b #; (0 0)
+      ) #; (0 7)
 
   - name: "string_with_escapes"
     description: "解析带转义字符的字符串"
     input: "\"hello\\nworld\""
-    expected: "\"hello\\nworld\";{0,14}"
+    expected: "\"hello\\nworld\" #; (0 14)"
 
   - name: "multiline_expression"
     description: "解析多行表达式"
     input: "(define x\n  42)"
-    expected: "(define;{1,7} x;{8,9} 42;{12,14});{0,15}"
+    expected: |
+      (
+        define #; (1 7)
+        x #; (8 9)
+        42 #; (12 14)
+      ) #; (0 15)
