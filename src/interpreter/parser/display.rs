@@ -12,27 +12,29 @@ use crate::interpreter::parser::types::{SExpr, SExprContent, Value};
 
 impl Display for SExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.fmt_with_indent(f, 0)
+        self.fmt_compact(f)
     }
 }
 
 impl SExpr {
     /// 带缩进的格式化输出
-    pub fn fmt_with_indent(&self, f: &mut Formatter<'_>, indent: usize) -> fmt::Result {
+    /// - indent: 缩进层级
+    /// - inline: 是否内联输出（不换行）
+    pub fn fmt_with_indent(&self, f: &mut Formatter<'_>, indent: usize, inline: bool) -> fmt::Result {
         match &self.content {
             SExprContent::Atom(value) => {
                 write!(f, "{}", value)?;
-                self.write_position_comment(f)
+                self.write_position_comment(f, indent, inline)
             },
             SExprContent::Nil => {
                 write!(f, "()")?;
-                self.write_position_comment(f)
+                self.write_position_comment(f, indent, inline)
             },
             SExprContent::Cons { car, cdr } => {
                 write!(f, "(")?;
-                self.fmt_cons_content(f, car, cdr, indent)?;
+                self.fmt_cons_content(f, car, cdr, indent, inline)?;
                 write!(f, ")")?;
-                self.write_position_comment(f)
+                self.write_position_comment(f, indent, inline)
             },
             SExprContent::Vector(elements) => {
                 write!(f, "#(")?;
@@ -40,17 +42,102 @@ impl SExpr {
                     if i > 0 {
                         write!(f, " ")?;
                     }
-                    element.fmt_with_indent(f, indent + 1)?;
+                    element.fmt_with_indent(f, indent + 1, true)?; // vector 元素内联
                 }
                 write!(f, ")")?;
-                self.write_position_comment(f)
+                self.write_position_comment(f, indent, inline)
             },
         }
     }
 
+    /// 美化输出 - 带换行和缩进
+    pub fn fmt_pretty(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.fmt_with_indent(f, 0, false)
+    }
+
+    /// 紧凑输出 - 单行输出
+    pub fn fmt_compact(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.fmt_with_indent(f, 0, true)
+    }
+
+    /// 生成美化输出字符串
+    pub fn to_pretty_string(&self) -> String {
+        let mut result = String::new();
+        self.fmt_pretty_to_string(&mut result, 0);
+        result
+    }
+
+    /// 递归生成美化输出字符串的辅助方法
+    fn fmt_pretty_to_string(&self, result: &mut String, indent: usize) {
+        match &self.content {
+            SExprContent::Atom(value) => {
+                result.push_str(&format!("{}", value));
+                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+            },
+            SExprContent::Nil => {
+                result.push_str("()");
+                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+            },
+            SExprContent::Cons { car, cdr } => {
+                result.push('(');
+                self.fmt_cons_pretty_to_string(result, car, cdr, indent + 1);
+                result.push(')');
+                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+            },
+            SExprContent::Vector(elements) => {
+                result.push_str("#(");
+                for (i, element) in elements.iter().enumerate() {
+                    if i > 0 {
+                        result.push(' ');
+                    }
+                    result.push_str(&format!("{}", element)); // vector 元素紧凑显示
+                }
+                result.push(')');
+                result.push_str(&format!(";{{{},{}}}", self.span.start, self.span.end));
+            },
+        }
+    }
+
+    /// 格式化 cons 结构的内容（美化版本）
+    fn fmt_cons_pretty_to_string(&self, result: &mut String, car: &SExpr, cdr: &SExpr, indent: usize) {
+        // 第一个元素：换行并缩进
+        result.push('\n');
+        for _ in 0..indent {
+            result.push_str("  ");
+        }
+        car.fmt_pretty_to_string(result, indent);
+        
+        match &cdr.content {
+            SExprContent::Nil => {
+                // 正常列表的结尾，换行返回上一级缩进
+                result.push('\n');
+                for _ in 0..(indent - 1) {
+                    result.push_str("  ");
+                }
+            },
+            SExprContent::Cons { car: next_car, cdr: next_cdr } => {
+                // 继续列表的下一个元素
+                self.fmt_cons_pretty_to_string(result, next_car, next_cdr, indent);
+            },
+            _ => {
+                // 真正的点对：换行缩进，然后输出点和cdr
+                result.push('\n');
+                for _ in 0..indent {
+                    result.push_str("  ");
+                }
+                result.push_str(". ");
+                cdr.fmt_pretty_to_string(result, indent);
+                result.push('\n');
+                for _ in 0..(indent - 1) {
+                    result.push_str("  ");
+                }
+            }
+        }
+    }
+
     /// 格式化 cons 结构的内容
-    fn fmt_cons_content(&self, f: &mut Formatter<'_>, car: &SExpr, cdr: &SExpr, indent: usize) -> fmt::Result {
-        car.fmt_with_indent(f, indent + 1)?;
+    fn fmt_cons_content(&self, f: &mut Formatter<'_>, car: &SExpr, cdr: &SExpr, indent: usize, inline: bool) -> fmt::Result {
+        car.fmt_with_indent(f, indent + 1, true)?; // cons 内部元素内联
         
         match &cdr.content {
             SExprContent::Nil => {
@@ -60,19 +147,31 @@ impl SExpr {
             SExprContent::Cons { car: next_car, cdr: next_cdr } => {
                 // 继续列表
                 write!(f, " ")?;
-                self.fmt_cons_content(f, next_car, next_cdr, indent)
+                self.fmt_cons_content(f, next_car, next_cdr, indent, inline)
             },
             _ => {
                 // 真正的点对
                 write!(f, " . ")?;
-                cdr.fmt_with_indent(f, indent + 1)
+                cdr.fmt_with_indent(f, indent + 1, true) // 点对的 cdr 内联
             }
         }
     }
 
     /// 写入位置信息注释
-    fn write_position_comment(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, ";{{{},{}}}", self.span.start, self.span.end)
+    fn write_position_comment(&self, f: &mut Formatter<'_>, indent: usize, inline: bool) -> fmt::Result {
+        write!(f, ";{{{},{}}}", self.span.start, self.span.end)?;
+        
+        if !inline {
+            // 换行并添加缩进
+            writeln!(f)?;
+            if indent > 0 {
+                for _ in 0..indent {
+                    write!(f, "  ")?; // 每层缩进 2 个空格
+                }
+            }
+        }
+        
+        Ok(())
     }
 }
 
@@ -307,5 +406,114 @@ mod tests {
             span,
         );
         assert_eq!(format!("{}", float), "3.14;{0,5}");
+    }
+
+    #[test]
+    fn test_pretty_string_simple() {
+        let span = Span::new(0, 2);
+        let atom = SExpr::with_span(
+            SExprContent::Atom(Value::Number(42.0)),
+            span,
+        );
+        
+        // 简单原子的美化输出应该与紧凑输出相同
+        assert_eq!(atom.to_pretty_string(), "42;{0,2}");
+    }
+
+    #[test]
+    fn test_pretty_string_list() {
+        // 构造一个简单列表 (a b c)
+        let span_a = Span::new(1, 2);
+        let span_b = Span::new(3, 4);
+        let span_c = Span::new(5, 6);
+        let span_list = Span::new(0, 7);
+        
+        let a = Rc::new(SExpr::with_span(
+            SExprContent::Atom(Value::Symbol("a".to_string())),
+            span_a,
+        ));
+        let b = Rc::new(SExpr::with_span(
+            SExprContent::Atom(Value::Symbol("b".to_string())),
+            span_b,
+        ));
+        let c = Rc::new(SExpr::with_span(
+            SExprContent::Atom(Value::Symbol("c".to_string())),
+            span_c,
+        ));
+        
+        let nil = Rc::new(SExpr::with_span(SExprContent::Nil, span_c));
+        let list_c = Rc::new(SExpr::with_span(
+            SExprContent::Cons { car: c, cdr: nil },
+            span_list,
+        ));
+        let list_bc = Rc::new(SExpr::with_span(
+            SExprContent::Cons { car: b, cdr: list_c },
+            span_list,
+        ));
+        let list_abc = SExpr::with_span(
+            SExprContent::Cons { car: a, cdr: list_bc },
+            span_list,
+        );
+        
+        let pretty = list_abc.to_pretty_string();
+        // 美化输出应该包含换行和缩进
+        assert!(pretty.contains('\n'));
+        assert!(pretty.contains("  a;{1,2}"));
+        assert!(pretty.contains("  b;{3,4}"));
+        assert!(pretty.contains("  c;{5,6}"));
+        assert!(pretty.ends_with(");{0,7}"));
+    }
+
+    #[test]
+    fn test_pretty_string_nested() {
+        // 构造嵌套列表 (a (b c))
+        let span_a = Span::new(1, 2);
+        let span_b = Span::new(4, 5);
+        let span_c = Span::new(6, 7);
+        let span_inner = Span::new(3, 8);
+        let span_outer = Span::new(0, 9);
+        
+        let a = Rc::new(SExpr::with_span(
+            SExprContent::Atom(Value::Symbol("a".to_string())),
+            span_a,
+        ));
+        let b = Rc::new(SExpr::with_span(
+            SExprContent::Atom(Value::Symbol("b".to_string())),
+            span_b,
+        ));
+        let c = Rc::new(SExpr::with_span(
+            SExprContent::Atom(Value::Symbol("c".to_string())),
+            span_c,
+        ));
+        
+        let nil = Rc::new(SExpr::with_span(SExprContent::Nil, span_c));
+        let inner_list = Rc::new(SExpr::with_span(
+            SExprContent::Cons { 
+                car: b, 
+                cdr: Rc::new(SExpr::with_span(
+                    SExprContent::Cons { car: c, cdr: nil.clone() },
+                    span_inner,
+                ))
+            },
+            span_inner,
+        ));
+        
+        let outer_list = SExpr::with_span(
+            SExprContent::Cons { 
+                car: a, 
+                cdr: Rc::new(SExpr::with_span(
+                    SExprContent::Cons { car: inner_list, cdr: nil },
+                    span_outer,
+                ))
+            },
+            span_outer,
+        );
+        
+        let pretty = outer_list.to_pretty_string();
+        // 嵌套结构应该有多层缩进
+        assert!(pretty.contains('\n'));
+        assert!(pretty.contains("  a;{1,2}"));
+        assert!(pretty.contains("    b;{4,5}"));
+        assert!(pretty.contains("    c;{6,7}"));
     }
 }
