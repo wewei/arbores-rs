@@ -22,14 +22,14 @@
 
 ## 源代码结构
 
-语法分析器模块按照职责分离的原则组织，采用分层架构设计：
+语法分析器模块采用简化的分层架构设计，基于 Scheme 语法的简单性特点：
 
 ```text
 /src/interpreter/parser/
-├── mod.rs        # 模块接口和公共 API
-├── types.rs      # 核心数据类型定义
-├── rules.rs      # 递归下降规则定义
-└── engine.rs     # 递归下降解析引擎
+├── mod.rs        # 模块接口和公共 API  
+├── types.rs      # AST 类型和错误类型定义
+├── engine.rs     # 简化的递归下降解析器
+└── utils.rs      # 辅助函数（源码重建等）
 ```
 
 **模块职责说明**：
@@ -37,21 +37,20 @@
 - **`types.rs`**：定义语法分析器的核心数据结构
   - `SExpr`, `SExprContent` - AST 节点类型
   - `ParseError`, `ParseResult`, `ParseOutput` - 错误和结果类型
-  - `ParserState` - 内部解析状态管理
   - 类型相关的辅助方法和特征实现
 
-- **`rules.rs`**：集中管理递归下降解析规则
-  - `parse_expression()` - 表达式解析的主入口
-  - `parse_list()`, `parse_dotted_list()` - 列表解析规则
-  - `parse_quoted_expression()` - 引用语法解析
+- **`engine.rs`**：实现简化的递归下降解析器
+  - `SimpleParser` - 主要解析器结构体
+  - `parse_expression()` - 表达式解析的核心分发逻辑
+  - `parse_list()`, `parse_dotted_list()` - 列表解析函数
+  - `parse_quoted()` - 引用语法解析
   - `parse_atom()`, `parse_vector()` - 原子和向量解析
-  - 各种验证和辅助解析函数
+  - Token 流操作和错误处理
 
-- **`engine.rs`**：实现递归下降解析核心逻辑
-  - `ParserState` 状态管理和 Token 流操作
-  - `parse()` 主要 API 函数和解析流程控制
-  - 错误处理和恢复机制（MVP 阶段简化）
-  - 源代码重建和位置信息传递
+- **`utils.rs`**：辅助功能实现
+  - `SourceBuilder` - 源代码重建工具
+  - 位置信息处理函数
+  - 通用验证和转换函数
 
 - **`mod.rs`**：模块对外接口
   - 导出公共类型和函数
@@ -331,11 +330,27 @@ fn parse_quoted_expression(quote_token: Token, expr_node: SExpr) -> SExpr {
 
 ### 问题：递归下降算法状态机如何设计，规约规则如何定义？
 
+**结论**：对于 Scheme 这样的简单语法，不需要复杂的规则系统和状态机。
+
 **设计原则**：
-- **函数式不可变**：状态机状态完全不可变，每次迭代产生新状态
-- **声明式规则**：规约规则采用声明式描述，与具体实现分离
-- **组合式设计**：复杂规则由简单规则组合而成
-- **类型安全**：利用Rust类型系统确保状态转换的正确性
+- **直接递归下降**：根据当前 token 直接分发到对应解析函数
+- **函数式设计**：每个解析函数都是纯函数，接受 token 流返回 AST
+- **简单明了**：避免过度设计，让代码更容易理解和维护
+
+**为什么 Scheme 语法适合简单的递归下降？**
+
+1. **LL(1) 特性**：每种语法结构都有唯一的起始标记
+   ```scheme
+   (expr ...)    ; '(' 开始 → 列表
+   #(expr ...)   ; '#(' 开始 → 向量  
+   'expr         ; ''' 开始 → 引用
+   42            ; 数字 → 原子
+   "hello"       ; 字符串 → 原子
+   symbol        ; 符号 → 原子
+   ```
+
+2. **无歧义语法**：不需要优先级消歧或复杂的前瞻
+3. **规整结构**：所有复杂结构都是简单结构的递归组合
 
 ## 状态机核心数据结构
 
@@ -411,398 +426,236 @@ pub enum QuoteType {
 }
 ```
 
-### ParseRule - 解析规则抽象
+### 简化的递归下降设计
+
+对于 Scheme 这样的简单语法，我们不需要复杂的规则系统。递归下降算法可以直接根据当前 token 类型进行分发：
 
 ```rust
-/// 解析规则的抽象表示
-/// 采用声明式设计，将规则定义与实现分离
-#[derive(Debug, Clone)]
-pub struct ParseRule {
-    /// 规则名称（用于调试和错误报告）
-    pub name: &'static str,
-    /// 规则优先级（用于消歧）
-    pub priority: u8,
-    /// 前瞻Token匹配条件
-    pub lookahead: TokenMatcher,
-    /// 规则动作类型
-    pub action: RuleAction,
-}
-
-/// Token匹配器 - 声明式描述Token匹配条件
-#[derive(Debug, Clone)]
-pub enum TokenMatcher {
-    /// 精确匹配特定Token类型
-    Exact(TokenType),
-    /// 匹配多个可能的Token类型之一
-    OneOf(Vec<TokenType>),
-    /// 匹配原子类型Token（数字、字符串、符号等）
-    Atom,
-    /// 匹配引用前缀Token
-    Quote,
-    /// 自定义匹配函数
-    Custom(fn(&Token) -> bool),
-    /// 任意Token（用作fallback）
-    Any,
-}
-
-/// Token类型枚举（简化版，对应Lexer的Token类型）
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenType {
-    LeftParen,      // (
-    RightParen,     // )
-    LeftBracket,    // [
-    RightBracket,   // ]
-    VectorStart,    // #(
-    Dot,            // .
-    Quote,          // '
-    Quasiquote,     // `
-    Unquote,        // ,
-    UnquoteSplicing,// ,@
-    Number,         // 数字
-    String,         // 字符串
-    Symbol,         // 符号
-    Boolean,        // 布尔值
-    Character,      // 字符
-    Eof,            // 文件结束
-}
-
-/// 规则动作类型 - 定义规则匹配后的行为
-#[derive(Debug, Clone)]
-pub enum RuleAction {
-    /// 解析原子表达式
-    ParseAtom,
-    /// 开始列表解析
-    StartList,
-    /// 结束列表解析
-    EndList,
-    /// 开始向量解析
-    StartVector,
-    /// 结束向量解析
-    EndVector,
-    /// 处理点号（点对列表）
-    HandleDot,
-    /// 处理引用语法
-    HandleQuote(QuoteType),
-    /// 递归解析子表达式
-    ParseSubExpression,
-    /// 错误恢复
-    ErrorRecovery,
-}
-```
-
-### ParseStep - 解析步骤结果
-
-```rust
-/// 单步解析的结果类型
-/// 包含新状态和Token消费信息
-#[derive(Debug, Clone)]
-pub struct ParseStep {
-    /// 解析后的新状态
-    pub new_state: ParserState,
-    /// 解析结果
-    pub result: StepResult,
-    /// 本次解析消费的Token数量
-    pub tokens_consumed: usize,
-}
-
-/// 单步解析的具体结果
-#[derive(Debug, Clone)]
-pub enum StepResult {
-    /// 成功解析了一个完整的表达式
-    Expression(SExpr),
-    /// 状态转换但未完成表达式（如进入列表）
-    Continue,
-    /// 到达输入结束
-    EndOfInput,
-    /// 解析错误
-    Error(ParseError),
-    /// 需要更多输入才能继续
-    NeedMoreInput,
-}
-```
-
-## 规约规则系统设计
-
-### RuleSet - 规则集合
-
-```rust
-/// 解析规则集合 - 管理所有语法规则
-#[derive(Debug)]
-pub struct RuleSet {
-    /// 表达式级别的规则
-    pub expression_rules: Vec<ParseRule>,
-    /// 列表内部的规则
-    pub list_rules: Vec<ParseRule>,
-    /// 向量内部的规则  
-    pub vector_rules: Vec<ParseRule>,
-    /// 引用处理规则
-    pub quote_rules: Vec<ParseRule>,
-    /// 错误恢复规则
-    pub recovery_rules: Vec<ParseRule>,
-}
-
-impl RuleSet {
-    /// 根据当前状态和前瞻Token选择合适的规则
-    pub fn select_rule(&self, state: &ParserState, lookahead: &Token) -> Option<&ParseRule> {
-        let rules = match state.current_context() {
-            ParseContext::TopLevel => &self.expression_rules,
-            ParseContext::List { .. } => &self.list_rules,
-            ParseContext::Vector { .. } => &self.vector_rules,
-            ParseContext::Quote { .. } => &self.quote_rules,
-        };
-        
-        rules.iter()
-            .filter(|rule| rule.lookahead.matches(lookahead))
-            .max_by_key(|rule| rule.priority)
-    }
-}
-```
-
-### 标准规则定义示例
-
-```rust
-/// 构建标准Scheme语法规则集
-pub fn build_scheme_rules() -> RuleSet {
-    RuleSet {
-        expression_rules: vec![
-            // 原子表达式规则
-            ParseRule {
-                name: "atom",
-                priority: 10,
-                lookahead: TokenMatcher::Atom,
-                action: RuleAction::ParseAtom,
-            },
-            
-            // 列表开始规则
-            ParseRule {
-                name: "list_start",
-                priority: 20,
-                lookahead: TokenMatcher::Exact(TokenType::LeftParen),
-                action: RuleAction::StartList,
-            },
-            
-            // 向量开始规则
-            ParseRule {
-                name: "vector_start", 
-                priority: 20,
-                lookahead: TokenMatcher::Exact(TokenType::VectorStart),
-                action: RuleAction::StartVector,
-            },
-            
-            // 引用语法规则
-            ParseRule {
-                name: "quote",
-                priority: 30,
-                lookahead: TokenMatcher::Exact(TokenType::Quote),
-                action: RuleAction::HandleQuote(QuoteType::Quote),
-            },
-            
-            ParseRule {
-                name: "quasiquote",
-                priority: 30, 
-                lookahead: TokenMatcher::Exact(TokenType::Quasiquote),
-                action: RuleAction::HandleQuote(QuoteType::Quasiquote),
-            },
-            
-            // ... 其他引用规则
-        ],
-        
-        list_rules: vec![
-            // 列表元素解析
-            ParseRule {
-                name: "list_element",
-                priority: 10,
-                lookahead: TokenMatcher::Custom(|t| !matches!(t.token_type, 
-                    TokenType::RightParen | TokenType::Dot)),
-                action: RuleAction::ParseSubExpression,
-            },
-            
-            // 点对列表处理
-            ParseRule {
-                name: "dotted_pair",
-                priority: 20,
-                lookahead: TokenMatcher::Exact(TokenType::Dot),
-                action: RuleAction::HandleDot,
-            },
-            
-            // 列表结束
-            ParseRule {
-                name: "list_end",
-                priority: 30,
-                lookahead: TokenMatcher::Exact(TokenType::RightParen),
-                action: RuleAction::EndList,
-            },
-        ],
-        
-        // ... 其他规则集合
-    }
-}
-```
-
-## 状态机执行模型
-
-### 核心执行函数
-
-```rust
-/// Engine的核心实现 - 管理Token流和状态迭代
-pub struct ParseEngine<I> 
+/// 简化的解析器 - 直接递归下降，无需规则抽象
+/// Scheme 语法足够简单，不需要复杂的规则匹配系统
+pub struct SimpleParser<I> 
 where 
     I: Iterator<Item = Result<Token, LexError>>
 {
-    /// Token输入流
     tokens: std::iter::Peekable<I>,
-    /// 当前位置（用于错误报告）
     position: usize,
 }
 
-impl<I> ParseEngine<I> 
+impl<I> SimpleParser<I> 
 where 
     I: Iterator<Item = Result<Token, LexError>>
 {
-    pub fn new(tokens: I) -> Self {
-        Self {
-            tokens: tokens.peekable(),
-            position: 0,
-        }
-    }
-    
-    /// 状态机的核心迭代函数
-    /// 纯函数设计：输入状态 + 当前Token -> 输出状态 + 结果
-    pub fn parse_step(
-        &mut self,
-        state: ParserState, 
-        rules: &RuleSet
-    ) -> ParseStep {
-        // 1. 获取前瞻Token
-        let lookahead = match self.tokens.peek() {
-            Some(Ok(token)) => token.clone(),
-            Some(Err(lex_error)) => return ParseStep::error(state, lex_error.clone().into()),
-            None => return ParseStep::end_of_input(state),
-        };
-        
-        // 2. 根据当前状态和前瞻Token选择规则
-        let rule = match rules.select_rule(&state, &lookahead) {
-            Some(rule) => rule,
-            None => return ParseStep::error(state, 
-                ParseError::unexpected_token(lookahead, "No matching rule")),
-        };
-        
-        // 3. 应用规则执行相应动作
-        self.apply_rule(state, rule)
-    }
-    
-    /// 应用规则并返回新状态
-    fn apply_rule(&mut self, state: ParserState, rule: &ParseRule) -> ParseStep {
-        match rule.action {
-            RuleAction::ParseAtom => {
-                // 消费一个Token并解析为原子
-                if let Some(Ok(token)) = self.tokens.next() {
-                    self.position += 1;
-                    // 解析原子逻辑...
-                    ParseStep::expression(state, parse_atom_from_token(token))
-                } else {
-                    ParseStep::error(state, ParseError::unexpected_eof())
-                }
-            },
-            RuleAction::StartList => {
-                // 消费左括号并进入列表上下文
-                if let Some(Ok(token)) = self.tokens.next() {
-                    self.position += 1;
-                    let new_context = ParseContext::List {
-                        start_token: token,
-                        elements: vec![],
-                        state: ListState::Normal,
-                    };
-                    ParseStep::continue_with_context(state, new_context)
-                } else {
-                    ParseStep::error(state, ParseError::unexpected_eof())
-                }
-            },
-            // ... 其他规则动作的实现
-            _ => todo!("实现其他规则动作"),
-        }
-    }
-    
-    /// 完整的解析流程
-    pub fn parse_all(mut self, rules: &RuleSet) -> ParseOutput {
-        let mut state = ParserState::new();
-        
-        loop {
-            let step = self.parse_step(state, rules);
-            
-            match step.result {
-                StepResult::Expression(expr) => {
-                    state = step.new_state.add_expression(expr);
-                },
-                StepResult::Continue => {
-                    state = step.new_state;
-                },
-                StepResult::EndOfInput => {
-                    return ParseOutput {
-                        result: Ok(state.parsed_exprs),
-                        source_text: state.consumed_text,
-                    };
-                },
-                StepResult::Error(error) => {
-                    return ParseOutput {
-                        result: Err(error),
-                        source_text: state.consumed_text,
-                    };
-                },
-                StepResult::NeedMoreInput => {
-                    // 在MVP阶段简化处理
-                    return ParseOutput {
-                        result: Err(ParseError::unexpected_eof()),
-                        source_text: state.consumed_text,
-                    };
-                },
-            }
+    /// 解析表达式 - 根据第一个 token 直接分发
+    fn parse_expression(&mut self) -> Result<SExpr, ParseError> {
+        match self.peek_token()? {
+            TokenType::LeftParen => self.parse_list(),
+            TokenType::VectorStart => self.parse_vector(),
+            TokenType::Quote => self.parse_quoted(QuoteType::Quote),
+            TokenType::Quasiquote => self.parse_quoted(QuoteType::Quasiquote),
+            TokenType::Unquote => self.parse_quoted(QuoteType::Unquote),
+            TokenType::UnquoteSplicing => self.parse_quoted(QuoteType::UnquoteSplicing),
+            TokenType::Number | TokenType::String | TokenType::Symbol | 
+            TokenType::Boolean | TokenType::Character => self.parse_atom(),
+            _ => Err(ParseError::unexpected_token(self.current_token()?)),
         }
     }
 }
 
-/// 辅助函数实现
-impl ParseStep {
-    pub fn expression(state: ParserState, expr: SExpr) -> Self {
-        Self {
-            new_state: state,
-            result: StepResult::Expression(expr),
-            tokens_consumed: 1,
+```
+
+### 为什么 Scheme 不需要复杂的规则系统？
+
+1. **语法无歧义**：每种语法结构都有唯一的起始标记
+   - `(` → 列表
+   - `#(` → 向量  
+   - `'` → 引用
+   - 原子 token → 原子值
+
+2. **LL(1) 特性**：只需要一个前瞻 token 就能确定解析路径
+   ```scheme
+   (define x 42)  ; 看到 '(' 就知道是列表
+   'expr          ; 看到 ''' 就知道是引用
+   42             ; 看到数字就知道是原子
+   ```
+
+3. **结构递归**：所有复杂结构都是简单结构的递归组合
+   ```scheme
+   (f (g x) (h y))  ; 嵌套列表，每层都用相同规则解析
+   ```
+
+### 简化后的解析流程
+
+```rust
+impl<I> SimpleParser<I> {
+    /// 解析单个表达式
+    fn parse_expression(&mut self) -> Result<SExpr, ParseError> {
+        match self.peek_token()? {
+            TokenType::LeftParen => self.parse_list(),
+            TokenType::VectorStart => self.parse_vector(), 
+            TokenType::Quote => self.parse_quoted(QuoteType::Quote),
+            // ... 其他引用类型
+            _ if self.is_atom_token() => self.parse_atom(),
+            _ => Err(ParseError::unexpected_token(self.current_token()?)),
         }
     }
     
-    pub fn continue_with_context(mut state: ParserState, context: ParseContext) -> Self {
-        state.context_stack.push(context);
-        state.depth += 1;
-        Self {
-            new_state: state,
-            result: StepResult::Continue,
-            tokens_consumed: 1,
+    /// 解析列表
+    fn parse_list(&mut self) -> Result<SExpr, ParseError> {
+        let start_token = self.consume_token()?; // 消费 '('
+        let mut elements = Vec::new();
+        
+        loop {
+            match self.peek_token()? {
+                TokenType::RightParen => {
+                    self.consume_token()?; // 消费 ')'
+                    return Ok(self.build_list(elements, start_token));
+                },
+                TokenType::Dot => {
+                    return self.parse_dotted_list(elements, start_token);
+                },
+                _ => {
+                    elements.push(self.parse_expression()?);
+                }
+            }
         }
     }
     
-    pub fn error(state: ParserState, error: ParseError) -> Self {
-        Self {
-            new_state: state,
-            result: StepResult::Error(error),
-            tokens_consumed: 0,
-        }
-    }
-    
-    pub fn end_of_input(state: ParserState) -> Self {
-        Self {
-            new_state: state,
-            result: StepResult::EndOfInput,
-            tokens_consumed: 0,
+    /// 解析点对列表的尾部
+    fn parse_dotted_list(&mut self, elements: Vec<SExpr>, start_token: Token) 
+        -> Result<SExpr, ParseError> {
+        let dot_token = self.consume_token()?; // 消费 '.'
+        let tail = self.parse_expression()?;   // 解析尾部表达式
+        
+        // 验证后面是 ')'
+        match self.peek_token()? {
+            TokenType::RightParen => {
+                self.consume_token()?;
+                Ok(self.build_dotted_list(elements, tail, start_token))
+            },
+            _ => Err(ParseError::invalid_dotted_list(dot_token)),
         }
     }
 }
 ```
 
-**设计优势**：
-1. **纯函数式**：所有状态转换都是纯函数，便于测试和推理
-2. **可组合**：规则可以自由组合和扩展
-3. **类型安全**：编译时就能捕获大部分状态转换错误
-4. **可调试**：每个解析步骤都有明确的状态快照
-5. **可扩展**：新增语法特性只需要添加新规则，不需要修改核心引擎
+### 删除的复杂设计
+
+以下设计在 Scheme 解析器中是不必要的：
+
+1. **ParseRule 系统**：Scheme 语法简单，直接的 match 分发更清晰
+2. **Priority 字段**：没有语法歧义，不需要优先级消歧
+3. **TokenMatcher**：直接匹配 TokenType 即可，不需要复杂的匹配器
+4. **RuleAction**：解析动作可以直接内联在对应函数中
+5. **RuleSet**：不需要规则集合管理
+
+### 简化后的优势
+
+1. **代码更简洁**：减少了大量抽象层次
+2. **性能更好**：直接分发比规则匹配更快
+3. **易于理解**：解析逻辑更直观
+4. **易于调试**：调用栈更清晰
+5. **易于扩展**：新增语法特性只需要添加新的 match 分支
+
+### 什么时候需要复杂的规则系统？
+
+复杂的规则系统适用于：
+1. **有歧义的语法**：需要优先级来消歧
+2. **复杂的前瞻需求**：需要 LL(k) 或 LR 解析
+3. **运算符优先级**：如中缀表达式解析
+4. **语法扩展频繁**：需要插件化的语法规则
+
+Scheme 的语法非常规整，不属于上述任何情况，所以简单的递归下降就足够了。
+
+## 简化后的核心 API
+
+基于简化的架构设计，解析器提供清晰的函数式接口：
+
+```rust
+/// 解析器主函数 - 对外暴露的唯一入口
+pub fn parse(tokens: impl Iterator<Item = Result<Token, LexError>>) -> ParseOutput {
+    let mut parser = SimpleParser::new(tokens);
+    parser.parse_all()
+}
+
+/// 核心解析器结构
+struct SimpleParser<I> {
+    tokens: std::iter::Peekable<I>,
+    source_builder: SourceBuilder, // 用于重建源码
+    position: usize,               // 当前位置（用于错误报告）
+}
+
+impl<I> SimpleParser<I> 
+where I: Iterator<Item = Result<Token, LexError>>
+{
+    /// 解析所有顶层表达式
+    fn parse_all(&mut self) -> ParseOutput {
+        let mut expressions = Vec::new();
+        
+        while !self.is_at_end() {
+            match self.parse_expression() {
+                Ok(expr) => {
+                    expressions.push(expr);
+                    self.source_builder.add_expression(&expr);
+                },
+                Err(error) => return ParseOutput {
+                    result: Err(error),
+                    source_text: self.source_builder.build(),
+                },
+            }
+        }
+        
+        ParseOutput {
+            result: Ok(expressions),
+            source_text: self.source_builder.build(),
+        }
+    }
+    
+    /// 解析单个表达式 - 核心分发逻辑
+    fn parse_expression(&mut self) -> Result<SExpr, ParseError> {
+        match self.peek_token_type()? {
+            TokenType::LeftParen => self.parse_list(),
+            TokenType::VectorStart => self.parse_vector(),
+            TokenType::Quote => self.parse_quoted(QuoteType::Quote),
+            TokenType::Quasiquote => self.parse_quoted(QuoteType::Quasiquote),
+            TokenType::Unquote => self.parse_quoted(QuoteType::Unquote),
+            TokenType::UnquoteSplicing => self.parse_quoted(QuoteType::UnquoteSplicing),
+            token_type if self.is_atom_type(token_type) => self.parse_atom(),
+            _ => Err(self.unexpected_token_error()),
+        }
+    }
+    
+    /// Token 流操作辅助方法
+    fn peek_token_type(&mut self) -> Result<TokenType, ParseError> {
+        match self.tokens.peek() {
+            Some(Ok(token)) => Ok(token.token_type.clone()),
+            Some(Err(e)) => Err(ParseError::LexError(e.clone())),
+            None => Err(ParseError::unexpected_eof()),
+        }
+    }
+    
+    fn consume_token(&mut self) -> Result<Token, ParseError> {
+        match self.tokens.next() {
+            Some(Ok(token)) => {
+                self.position += 1;
+                self.source_builder.add_token(&token);
+                Ok(token)
+            },
+            Some(Err(e)) => Err(ParseError::LexError(e)),
+            None => Err(ParseError::unexpected_eof()),
+        }
+    }
+    
+    fn is_at_end(&mut self) -> bool {
+        matches!(self.tokens.peek(), None | Some(Ok(Token { token_type: TokenType::Eof, .. })))
+    }
+}
+```
+
+**设计优势总结**：
+
+1. **简洁性**：去除了不必要的抽象层次，代码更直观
+2. **性能**：直接函数调用比规则匹配系统更高效
+3. **可维护性**：解析逻辑清晰，易于理解和调试
+4. **可扩展性**：新增语法特性只需添加新的分支，不需要修改框架
+5. **类型安全**：充分利用 Rust 的类型系统保证正确性
 
