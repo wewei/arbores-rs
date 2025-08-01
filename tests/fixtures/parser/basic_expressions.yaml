@@ -65,6 +65,34 @@ test_cases:
         d   #; (9 10)
       )     #; (0 11)
 
+  - name: "empty_vector"
+    description: "解析空向量"
+    input: "#()"
+    expected: "#() #; (0 3)"
+
+  - name: "simple_vector"
+    description: "解析简单向量"
+    input: "#(1 2 3)"
+    expected: |
+      #(
+        1 #; (2 3)
+        2 #; (4 5)
+        3 #; (6 7)
+      )   #; (0 8)
+
+  - name: "nested_vector"
+    description: "解析嵌套向量"
+    input: "#((a b) 42 \"hello\")"
+    expected: |
+      #(
+        (
+          a     #; (3 4)
+          b     #; (5 6)
+        )       #; (2 7)
+        42      #; (8 10)
+        "hello" #; (11 18)
+      )         #; (0 19)
+
   - name: "quote_expression"
     description: "解析引用表达式"
     input: "'x"

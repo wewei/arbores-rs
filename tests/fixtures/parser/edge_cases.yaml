@@ -121,6 +121,58 @@ test_cases:
         -2.5 #; (14 18)
       )      #; (0 19)
 
+  - name: "vector_with_many_elements"
+    description: "多元素向量"
+    input: "#(a b c d e f g h i j)"
+    expected: |
+      #(
+        a #; (2 3)
+        b #; (4 5)
+        c #; (6 7)
+        d #; (8 9)
+        e #; (10 11)
+        f #; (12 13)
+        g #; (14 15)
+        h #; (16 17)
+        i #; (18 19)
+        j #; (20 21)
+      )   #; (0 22)
+
+  - name: "mixed_vector_content"
+    description: "混合内容向量"
+    input: "#(42 \"hello\" #t (a b) #(1 2))"
+    expected: |
+      #(
+        42      #; (2 4)
+        "hello" #; (5 12)
+        #t      #; (13 15)
+        (
+          a     #; (17 18)
+          b     #; (19 20)
+        )       #; (16 21)
+        #(
+          1     #; (24 25)
+          2     #; (26 27)
+        )       #; (22 28)
+      )         #; (0 29)
+
+  - name: "vector_in_list"
+    description: "列表中的向量"
+    input: "(list #(1 2 3) #(a b))"
+    expected: |
+      (
+        list #; (1 5)
+        #(
+          1  #; (8 9)
+          2  #; (10 11)
+          3  #; (12 13)
+        )    #; (6 14)
+        #(
+          a  #; (17 18)
+          b  #; (19 20)
+        )    #; (15 21)
+      )      #; (0 22)
+
   - name: "empty_strings_and_symbols"
     description: "空字符串"
     input: "\"\""

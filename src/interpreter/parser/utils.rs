@@ -106,6 +106,7 @@ impl SourceBuilder {
             TokenType::RightParen => ")".to_string(),
             TokenType::LeftBracket => "[".to_string(),
             TokenType::RightBracket => "]".to_string(),
+            TokenType::VectorStart => "#(".to_string(),
             TokenType::Quote => "'".to_string(),
             TokenType::Quasiquote => "`".to_string(),
             TokenType::Unquote => ",".to_string(),

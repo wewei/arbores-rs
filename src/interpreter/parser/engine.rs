@@ -67,13 +67,12 @@ where
     fn parse_expression(&mut self) -> Result<SExpr, ParseError> {
         match self.peek_token_type()? {
             TokenType::LeftParen => self.parse_list(),
+            TokenType::VectorStart => self.parse_vector(),
             TokenType::Quote => self.parse_quoted(QuoteType::Quote),
             TokenType::Quasiquote => self.parse_quoted(QuoteType::Quasiquote),
             TokenType::Unquote => self.parse_quoted(QuoteType::Unquote),
             TokenType::UnquoteSplicing => self.parse_quoted(QuoteType::UnquoteSplicing),
             token_type if is_atom_token(&token_type) => self.parse_atom(),
-            // 暂时不支持向量解析，但预留接口
-            // TokenType::LeftBracket => self.parse_vector(),
             _ => {
                 let token = self.consume_token()?;
                 Err(ParseError::unexpected_token(
@@ -203,10 +202,34 @@ where
         Ok(SExpr::with_span(SExprContent::Atom(value), span))
     }
     
-    // 暂时不实现向量解析，等lexer支持后再补充
-    // fn parse_vector(&mut self) -> Result<SExpr, ParseError> {
-    //     todo!("Vector parsing will be implemented when lexer supports vectors")
-    // }
+    /// 解析向量 - 处理 #(expr1 expr2 ...)
+    fn parse_vector(&mut self) -> Result<SExpr, ParseError> {
+        let start_token = self.consume_token()?; // 消费 '#('
+        let start_span = start_token.span;
+        let mut elements = Vec::new();
+        
+        loop {
+            self.skip_trivia();
+            
+            match self.peek_token_type()? {
+                TokenType::RightParen => {
+                    let end_token = self.consume_token()?; // 消费 ')'
+                    let full_span = Span::new(start_span.start, end_token.span.end);
+                    
+                    // 将元素转换为 Rc<SExpr>
+                    let vector_elements: Vec<Rc<SExpr>> = elements.into_iter()
+                        .map(|expr| Rc::new(expr))
+                        .collect();
+                    
+                    return Ok(SExpr::with_span(SExprContent::Vector(vector_elements), full_span));
+                },
+                _ => {
+                    let expr = self.parse_expression()?;
+                    elements.push(expr);
+                }
+            }
+        }
+    }
     
     /// Token 流操作辅助方法
     fn peek_token_type(&mut self) -> Result<TokenType, ParseError> {
@@ -392,6 +415,113 @@ mod tests {
                         }
                     },
                     _ => panic!("Expected dotted pair"),
+                }
+            },
+            Err(e) => panic!("Parse failed: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_simple_vector() {
+        let tokens = vec![
+            create_test_token(TokenType::VectorStart, 0, "#("),
+            create_test_token(TokenType::Integer(1), 2, "1"),
+            create_test_token(TokenType::Integer(2), 4, "2"),
+            create_test_token(TokenType::Integer(3), 6, "3"),
+            create_test_token(TokenType::RightParen, 7, ")"),
+        ];
+        
+        let result = parse(tokens.into_iter());
+        
+        match result.result {
+            Ok(exprs) => {
+                assert_eq!(exprs.len(), 1);
+                match &exprs[0].content {
+                    SExprContent::Vector(elements) => {
+                        assert_eq!(elements.len(), 3);
+                        // 验证第一个元素是数字 1
+                        match &elements[0].content {
+                            SExprContent::Atom(Value::Number(n)) => assert_eq!(*n, 1.0),
+                            _ => panic!("Expected number 1"),
+                        }
+                        // 验证第二个元素是数字 2
+                        match &elements[1].content {
+                            SExprContent::Atom(Value::Number(n)) => assert_eq!(*n, 2.0),
+                            _ => panic!("Expected number 2"),
+                        }
+                        // 验证第三个元素是数字 3
+                        match &elements[2].content {
+                            SExprContent::Atom(Value::Number(n)) => assert_eq!(*n, 3.0),
+                            _ => panic!("Expected number 3"),
+                        }
+                    },
+                    _ => panic!("Expected vector"),
+                }
+            },
+            Err(e) => panic!("Parse failed: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_vector() {
+        let tokens = vec![
+            create_test_token(TokenType::VectorStart, 0, "#("),
+            create_test_token(TokenType::RightParen, 2, ")"),
+        ];
+        
+        let result = parse(tokens.into_iter());
+        
+        match result.result {
+            Ok(exprs) => {
+                assert_eq!(exprs.len(), 1);
+                match &exprs[0].content {
+                    SExprContent::Vector(elements) => {
+                        assert_eq!(elements.len(), 0);
+                    },
+                    _ => panic!("Expected empty vector"),
+                }
+            },
+            Err(e) => panic!("Parse failed: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_vector() {
+        let tokens = vec![
+            create_test_token(TokenType::VectorStart, 0, "#("),
+            create_test_token(TokenType::LeftParen, 2, "("),
+            create_test_token(TokenType::Symbol("a".to_string()), 3, "a"),
+            create_test_token(TokenType::Symbol("b".to_string()), 5, "b"),
+            create_test_token(TokenType::RightParen, 6, ")"),
+            create_test_token(TokenType::Integer(42), 8, "42"),
+            create_test_token(TokenType::RightParen, 10, ")"),
+        ];
+        
+        let result = parse(tokens.into_iter());
+        
+        match result.result {
+            Ok(exprs) => {
+                assert_eq!(exprs.len(), 1);
+                match &exprs[0].content {
+                    SExprContent::Vector(elements) => {
+                        assert_eq!(elements.len(), 2);
+                        // 验证第一个元素是列表 (a b)
+                        match &elements[0].content {
+                            SExprContent::Cons { car, .. } => {
+                                match &car.content {
+                                    SExprContent::Atom(Value::Symbol(s)) => assert_eq!(s, "a"),
+                                    _ => panic!("Expected symbol 'a'"),
+                                }
+                            },
+                            _ => panic!("Expected list"),
+                        }
+                        // 验证第二个元素是数字 42
+                        match &elements[1].content {
+                            SExprContent::Atom(Value::Number(n)) => assert_eq!(*n, 42.0),
+                            _ => panic!("Expected number 42"),
+                        }
+                    },
+                    _ => panic!("Expected vector"),
                 }
             },
             Err(e) => panic!("Parse failed: {}", e),

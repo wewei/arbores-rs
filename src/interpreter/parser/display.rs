@@ -113,16 +113,25 @@ impl SExpr {
                 lines.push((close_content, span_info));
             },
             SExprContent::Vector(elements) => {
-                let mut content = format!("{}#(", indent_str);
-                for (i, element) in elements.iter().enumerate() {
-                    if i > 0 {
-                        content.push(' ');
+                if elements.is_empty() {
+                    let content = format!("{}#()", indent_str);
+                    let span_info = format!("#; ({} {})", self.span.start, self.span.end);
+                    lines.push((content, span_info));
+                } else {
+                    // 所有非空向量都使用多行格式，以便为每个元素添加 span 信息
+                    let open_content = format!("{}#(", indent_str);
+                    lines.push((open_content, String::new()));
+                    
+                    // 递归处理每个元素
+                    for element in elements {
+                        element.fmt_pretty_to_lines(lines, indent + 1);
                     }
-                    content.push_str(&format!("{}", element)); // vector 元素紧凑显示
+                    
+                    // 结束括号和 span 信息
+                    let close_content = format!("{})", indent_str);
+                    let span_info = format!("#; ({} {})", self.span.start, self.span.end);
+                    lines.push((close_content, span_info));
                 }
-                content.push(')');
-                let span_info = format!("#; ({} {})", self.span.start, self.span.end);
-                lines.push((content, span_info));
             },
         }
     }

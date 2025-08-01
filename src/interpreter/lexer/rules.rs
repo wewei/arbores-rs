@@ -202,6 +202,11 @@ pub fn emit_dot(raw_text: &str, position: usize) -> Result<Token, LexError> {
     Ok(Token::from_text(TokenType::Dot, raw_text, position))
 }
 
+/// 生成向量开始 Token
+pub fn emit_vector_start(raw_text: &str, position: usize) -> Result<Token, LexError> {
+    Ok(Token::from_text(TokenType::VectorStart, raw_text, position))
+}
+
 /// 生成字符 Token
 pub fn emit_character(raw_text: &str, position: usize) -> Result<Token, LexError> {
     // 字符字面量格式：#\字符 或 #\字符名
@@ -406,6 +411,11 @@ pub fn get_scheme_state_machine() -> StateMachine {
                 TransitionRule::new(
                     Pattern::CharClass(is_whitespace_char),
                     StateAction::new(STATE_WHITESPACE, None)
+                ),
+                // 向量开始 (#()
+                TransitionRule::new(
+                    Pattern::String("#("),
+                    StateAction::new(STATE_INITIAL, Some(emit_vector_start))
                 ),
                 // 字符字面量开始 (#\)
                 TransitionRule::new(
@@ -712,5 +722,16 @@ mod tests {
         
         let result = process_string_escapes("invalid\\x", pos);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_emit_vector_start() {
+        let pos = 5;
+        let result = emit_vector_start("#(", pos).unwrap();
+        
+        assert_eq!(result.token_type, TokenType::VectorStart);
+        assert_eq!(result.span.start, pos);
+        assert_eq!(result.span.end, pos + 2);
+        assert_eq!(result.raw_text, "#(");
     }
 }

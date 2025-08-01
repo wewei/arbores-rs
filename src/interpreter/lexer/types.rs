@@ -25,6 +25,7 @@ pub enum TokenType {
     RightParen,     // )
     LeftBracket,    // [
     RightBracket,   // ]
+    VectorStart,    // #(
     
     // 特殊符号
     Quote,          // '
