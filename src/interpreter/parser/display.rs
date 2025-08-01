@@ -62,75 +62,90 @@ impl SExpr {
 
     /// 生成美化输出字符串
     pub fn to_pretty_string(&self) -> String {
-        let mut result = String::new();
-        self.fmt_pretty_to_string(&mut result, 0);
-        result
+        let mut lines = Vec::new();
+        self.fmt_pretty_to_lines(&mut lines, 0);
+        
+        // 计算最大内容长度用于对齐
+        let max_content_len = lines.iter()
+            .map(|(content, _)| content.len())
+            .max()
+            .unwrap_or(0);
+        
+        // 生成最终输出，span 信息右对齐
+        lines.into_iter()
+            .map(|(content, span_info)| {
+                if span_info.is_empty() {
+                    content
+                } else {
+                    format!("{:<width$} {}", content, span_info, width = max_content_len)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
-    /// 递归生成美化输出字符串的辅助方法
-    fn fmt_pretty_to_string(&self, result: &mut String, indent: usize) {
+    /// 递归生成内容和 span 信息行的辅助方法
+    fn fmt_pretty_to_lines(&self, lines: &mut Vec<(String, String)>, indent: usize) {
+        let indent_str = "  ".repeat(indent); // 每层缩进 2 个空格
+        
         match &self.content {
             SExprContent::Atom(value) => {
-                result.push_str(&format!("{}", value));
-                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
+                let content = format!("{}{}", indent_str, value);
+                let span_info = format!("#; ({} {})", self.span.start, self.span.end);
+                lines.push((content, span_info));
             },
             SExprContent::Nil => {
-                result.push_str("()");
-                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
+                let content = format!("{}()", indent_str);
+                let span_info = format!("#; ({} {})", self.span.start, self.span.end);
+                lines.push((content, span_info));
             },
             SExprContent::Cons { car, cdr } => {
-                result.push('(');
-                self.fmt_cons_pretty_to_string(result, car, cdr, indent + 1);
-                result.push(')');
-                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
+                // 开始括号
+                let open_content = format!("{}(", indent_str);
+                lines.push((open_content, String::new()));
+                
+                // 递归处理 cons 内容
+                self.fmt_cons_pretty_to_lines(lines, car, cdr, indent + 1);
+                
+                // 结束括号和 span 信息
+                let close_content = format!("{})", indent_str);
+                let span_info = format!("#; ({} {})", self.span.start, self.span.end);
+                lines.push((close_content, span_info));
             },
             SExprContent::Vector(elements) => {
-                result.push_str("#(");
+                let mut content = format!("{}#(", indent_str);
                 for (i, element) in elements.iter().enumerate() {
                     if i > 0 {
-                        result.push(' ');
+                        content.push(' ');
                     }
-                    result.push_str(&format!("{}", element)); // vector 元素紧凑显示
+                    content.push_str(&format!("{}", element)); // vector 元素紧凑显示
                 }
-                result.push(')');
-                result.push_str(&format!(" #; ({} {})", self.span.start, self.span.end));
+                content.push(')');
+                let span_info = format!("#; ({} {})", self.span.start, self.span.end);
+                lines.push((content, span_info));
             },
         }
     }
 
-    /// 格式化 cons 结构的内容（美化版本）
-    fn fmt_cons_pretty_to_string(&self, result: &mut String, car: &SExpr, cdr: &SExpr, indent: usize) {
-        // 第一个元素：换行并缩进
-        result.push('\n');
-        for _ in 0..indent {
-            result.push_str("  ");
-        }
-        car.fmt_pretty_to_string(result, indent);
+    /// 递归格式化 cons 结构的内容（美化版本）
+    fn fmt_cons_pretty_to_lines(&self, lines: &mut Vec<(String, String)>, car: &SExpr, cdr: &SExpr, indent: usize) {
+        // 处理第一个元素
+        car.fmt_pretty_to_lines(lines, indent);
         
         match &cdr.content {
             SExprContent::Nil => {
-                // 正常列表的结尾，换行返回上一级缩进
-                result.push('\n');
-                for _ in 0..(indent - 1) {
-                    result.push_str("  ");
-                }
+                // 正常列表的结尾，不需要额外处理
             },
             SExprContent::Cons { car: next_car, cdr: next_cdr } => {
                 // 继续列表的下一个元素
-                self.fmt_cons_pretty_to_string(result, next_car, next_cdr, indent);
+                self.fmt_cons_pretty_to_lines(lines, next_car, next_cdr, indent);
             },
             _ => {
-                // 真正的点对：换行缩进，然后输出点和cdr
-                result.push('\n');
-                for _ in 0..indent {
-                    result.push_str("  ");
-                }
-                result.push_str(". ");
-                cdr.fmt_pretty_to_string(result, indent);
-                result.push('\n');
-                for _ in 0..(indent - 1) {
-                    result.push_str("  ");
-                }
+                // 真正的点对：添加点和 cdr
+                let indent_str = "  ".repeat(indent);
+                let dot_content = format!("{}.", indent_str);
+                lines.push((dot_content, String::new()));
+                cdr.fmt_pretty_to_lines(lines, indent);
             }
         }
     }
@@ -458,10 +473,13 @@ mod tests {
         let pretty = list_abc.to_pretty_string();
         // 美化输出应该包含换行和缩进
         assert!(pretty.contains('\n'));
-        assert!(pretty.contains("  a #; (1 2)"));
-        assert!(pretty.contains("  b #; (3 4)"));
-        assert!(pretty.contains("  c #; (5 6)"));
-        assert!(pretty.ends_with(") #; (0 7)"));
+        assert!(pretty.contains("  a")); // 缩进的 a
+        assert!(pretty.contains("  b")); // 缩进的 b
+        assert!(pretty.contains("  c")); // 缩进的 c
+        assert!(pretty.contains("#; (1 2)")); // span 注释
+        assert!(pretty.contains("#; (3 4)")); // span 注释
+        assert!(pretty.contains("#; (5 6)")); // span 注释
+        assert!(pretty.contains("#; (0 7)")); // 外层 span 注释
     }
 
     #[test]
@@ -512,8 +530,13 @@ mod tests {
         let pretty = outer_list.to_pretty_string();
         // 嵌套结构应该有多层缩进
         assert!(pretty.contains('\n'));
-        assert!(pretty.contains("  a #; (1 2)"));
-        assert!(pretty.contains("    b #; (4 5)"));
-        assert!(pretty.contains("    c #; (6 7)"));
+        assert!(pretty.contains("  a")); // 第一层缩进的 a
+        assert!(pretty.contains("    b")); // 第二层缩进的 b
+        assert!(pretty.contains("    c")); // 第二层缩进的 c
+        assert!(pretty.contains("#; (1 2)")); // a 的 span 注释
+        assert!(pretty.contains("#; (4 5)")); // b 的 span 注释
+        assert!(pretty.contains("#; (6 7)")); // c 的 span 注释
+        assert!(pretty.contains("#; (3 8)")); // 内层列表的 span 注释
+        assert!(pretty.contains("#; (0 9)")); // 外层列表的 span 注释
     }
 }
