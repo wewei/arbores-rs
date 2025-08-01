@@ -3,7 +3,7 @@
 //! 本模块包含复杂的端到端测试，从源代码字符串直接生成SExpr，
 //! 测试词法分析和语法分析的完整流程。
 
-use super::{parse_from_string, SExpr, SExprContent, Value};
+use arbores::interpreter::parser::{parse_from_string, SExpr, SExprContent, Value};
 
 /// 从源代码字符串解析S表达式的便利函数
 fn parse_source(source: &str) -> Result<Vec<SExpr>, String> {

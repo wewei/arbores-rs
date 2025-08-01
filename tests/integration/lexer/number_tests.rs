@@ -8,7 +8,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::interpreter::lexer::{tokenize_string, TokenType, filter_trivia_tokens};
+    use arbores::interpreter::lexer::{tokenize_string, TokenType, filter_trivia_tokens};
 
     #[test]
     fn test_positive_integers() {
