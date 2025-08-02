@@ -1,39 +1,59 @@
 # 宏展开器设计
 
-## 文档状态
+状态：Draft-1
 
-**当前版本**: Draft-2  
-**最后更新**: 2024年  
-**状态**: 实现阶段
+## 概述
 
-## 设计目标
+宏展开器模块负责处理Scheme语言的宏定义和宏展开，实现从S表达式到S表达式的语法转换。核心功能是接收包含宏调用的S表达式，展开其中的宏调用，返回完全展开后的S表达式。
 
-- **卫生宏支持**：避免变量名冲突和意外捕获，通过词汇作用域保持实现
-- **模式匹配**：强大的语法模式匹配能力，支持 syntax-rules 模式
-- **嵌套展开**：支持宏内调用其他宏，带深度限制防止无限递归  
+## 模块职责（功能性需求）
+
+- **宏定义管理**：支持syntax-rules、define-macro等宏定义形式
+- **模式匹配**：实现强大的语法模式匹配和模板展开
+- **递归展开**：处理嵌套宏调用和递归宏定义
+- **环境集成**：与环境管理器协作，管理宏的作用域和可见性
+- **错误处理**：提供详细的宏展开错误信息和位置追踪
+
+## 设计目标（非功能性需求）
+
+- **卫生宏支持**：避免变量名冲突和意外捕获
+- **性能优化**：高效的模式匹配和展开算法
 - **调试友好**：保持宏展开的追踪信息和原始位置信息
+- **递归安全**：防止无限递归和栈溢出
 
-## 核心数据结构
+## 关键数据类型
 
-### 宏值类型 (MacroValue)
+### MacroValue
+
+宏值的代数数据类型：
 
 ```rust
+/// 宏值 - 表示不同类型的宏定义
 #[derive(Debug, Clone)]
 pub enum MacroValue {
-    Base(Value),                           // 普通值
-    Macro { 
-        name: String, 
-        params: Vec<String>, 
-        body: SExpr, 
-        env: EnvironmentId 
+    /// syntax-rules 风格的宏（包括用户定义和内置宏）
+    SyntaxRules {
+        name: String,
+        literals: Vec<String>,
+        rules: Vec<SyntaxRule>,
+        is_builtin: bool, // 标记是否为内置宏
     },
-    SyntaxRules { 
-        literals: Vec<String>, 
-        rules: Vec<SyntaxRule> 
+    /// 传统 define-macro 风格的宏
+    DefineMacro {
+        name: String,
+        params: Vec<String>,
+        body: SExpr,
+        env_id: EnvironmentId,
     },
-    SyntaxTransformer(fn(&[SExpr]) -> Result<SExpr, MacroError>),
 }
+```
 
+### SyntaxRule
+
+语法规则的模式匹配定义：
+
+```rust
+/// 语法规则 - 包含模式和模板
 #[derive(Debug, Clone)]
 pub struct SyntaxRule {
     pub pattern: Pattern,
@@ -41,164 +61,262 @@ pub struct SyntaxRule {
 }
 ```
 
-### 模式匹配类型 (Pattern)
+### Pattern
+
+模式匹配的模式定义：
 
 ```rust
+/// 模式 - 用于匹配输入S表达式
 #[derive(Debug, Clone)]
 pub enum Pattern {
-    Identifier(String),                    // 匹配标识符
-    Literal(Value),                        // 匹配字面值
-    List(Vec<Pattern>),                   // 匹配列表
-    Ellipsis(Box<Pattern>),               // 匹配零个或多个
-}
-
-#[derive(Debug, Clone)]  
-pub enum Template {
-    Identifier(String),                    // 模板标识符
-    Literal(Value),                        // 模板字面值
-    List(Vec<Template>),                  // 模板列表
-    Substitution(String),                 // 模式变量替换
-    EllipsisExpansion(Box<Template>),     // 椭圆展开
+    /// 字面值模式
+    Literal(Value),
+    /// 标识符模式  
+    Identifier(String),
+    /// 列表模式
+    List(Vec<Pattern>),
+    /// 椭圆模式（零个或多个）
+    Ellipsis(Box<Pattern>),
+    /// 通配符模式
+    Wildcard,
 }
 ```
 
-### 展开上下文 (ExpansionContext)
+### Template
+
+模板定义：
 
 ```rust
+/// 模板 - 用于生成输出S表达式
+#[derive(Debug, Clone)]
+pub enum Template {
+    /// 字面值模板
+    Literal(Value),
+    /// 标识符模板
+    Identifier(String),
+    /// 列表模板
+    List(Vec<Template>),
+    /// 椭圆展开模板
+    EllipsisExpansion(Box<Template>),
+    /// 模式变量替换
+    PatternVariable(String),
+}
+```
+
+### ExpansionContext
+
+宏展开上下文：
+
+```rust
+/// 宏展开上下文 - 管理展开过程的状态
 #[derive(Debug)]
 pub struct ExpansionContext {
-    pub depth: usize,                     // 当前展开深度
-    pub max_depth: usize,                 // 最大展开深度限制
-    pub env_manager: EnvironmentManager,  // 环境管理器
-    pub trace: Vec<MacroCallInfo>,        // 展开轨迹
-}
-
-#[derive(Debug, Clone)]
-pub struct MacroCallInfo {
-    pub macro_name: String,
-    pub call_site: SourceLocation,
-    pub expanded_to: Option<SExpr>,
+    /// 当前展开深度
+    pub depth: usize,
+    /// 最大展开深度限制
+    pub max_depth: usize,
+    /// 环境管理器引用
+    pub env_manager: Rc<RefCell<EnvironmentManager<MacroValue>>>,
+    /// 当前环境ID
+    pub current_env: EnvironmentId,
+    /// 展开追踪信息
+    pub trace: Vec<ExpansionTrace>,
 }
 ```
 
-### 模式绑定 (PatternBindings)
+### ExpansionTrace
+
+展开追踪信息：
 
 ```rust
+/// 展开追踪 - 记录宏展开过程
+#[derive(Debug, Clone)]
+pub struct ExpansionTrace {
+    pub macro_name: String,
+    pub input_expr: SExpr,
+    pub output_expr: SExpr,
+    pub call_site_span: Rc<Span>,
+}
+```
+
+### PatternBindings
+
+模式变量绑定：
+
+```rust
+/// 模式绑定 - 存储模式匹配的变量绑定
 #[derive(Debug, Clone)]
 pub struct PatternBindings {
-    pub simple: HashMap<String, SExpr>,           // 简单绑定
-    pub ellipsis: HashMap<String, Vec<SExpr>>,    // 椭圆绑定
+    /// 简单变量绑定
+    pub simple: HashMap<String, SExpr>,
+    /// 椭圆变量绑定
+    pub ellipsis: HashMap<String, Vec<SExpr>>,
 }
 ```
 
-### 宏错误类型 (MacroError)
+### MacroError
+
+宏展开错误类型：
 
 ```rust
+/// 宏展开错误 - 表示宏展开过程中的各种错误
 #[derive(Debug, Clone)]
 pub enum MacroError {
+    /// 未定义的宏
+    UndefinedMacro {
+        name: String,
+        span: Rc<Span>,
+    },
+    /// 模式匹配失败
     PatternMatchFailed {
         pattern: Pattern,
         input: SExpr,
-        location: SourceLocation,
+        span: Rc<Span>,
     },
+    /// 展开深度超限
     ExpansionDepthExceeded {
         current_depth: usize,
         max_depth: usize,
-        location: SourceLocation,
+        span: Rc<Span>,
     },
-    UndefinedMacro {
-        name: String,
-        location: SourceLocation,
-    },
-    InvalidSyntaxRules {
+    /// 无效的语法规则
+    InvalidSyntaxRule {
         reason: String,
-        location: SourceLocation,
+        span: Rc<Span>,
     },
-    CircularMacroDefinition {
-        cycle: Vec<String>,
-        location: SourceLocation,
+    /// 模板实例化失败
+    TemplateInstantiationFailed {
+        reason: String,
+        span: Rc<Span>,
+    },
+    /// 环境错误
+    EnvironmentError {
+        env_error: EnvironmentError,
+        span: Rc<Span>,
     },
 }
 ```
+## 核心函数接口（对外接口）
 
-## 核心函数接口
+**重要说明**：本节只记录对外暴露的主要接口函数，不包括内部实现函数、私有方法和辅助函数。
 
-### 宏展开函数 (对外接口)
+### expand_macro
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `expand_macro` | `expr: SExpr`, `context: &mut ExpansionContext` | `Result<SExpr, MacroError>` | 主要宏展开函数，递归展开表达式中的所有宏调用 |
+宏展开的主要入口函数，将包含宏调用的S表达式展开为完全展开的S表达式。
 
-### 宏定义函数 (对外接口)
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| expr | `SExpr` | 待展开的S表达式 |
+| context | `&mut ExpansionContext` | 宏展开上下文 |
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `define_syntax_rules_macro` | `name: String`, `literals: Vec<String>`, `rules: Vec<SyntaxRule>`, `env: EnvironmentId` | `Result<(), MacroError>` | 定义 syntax-rules 类型宏 |
-| `define_traditional_macro` | `name: String`, `params: Vec<String>`, `body: SExpr`, `env: EnvironmentId` | `Result<(), MacroError>` | 定义传统参数化宏 |
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Result<SExpr, MacroError>` | 展开后的S表达式或错误 |
 
-### 宏查找函数 (对外接口)
+### create_expansion_context
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `lookup_macro` | `name: &str`, `env: EnvironmentId`, `env_manager: &EnvironmentManager` | `Option<MacroValue>` | 查找环境中的宏定义 |
+创建宏展开上下文的工厂函数。
 
-### 错误处理函数 (对外接口)
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| env_manager | `Rc<RefCell<EnvironmentManager<MacroValue>>>` | 环境管理器 |
+| current_env | `EnvironmentId` | 当前环境ID |
+| max_depth | `usize` | 最大展开深度 |
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `format_macro_error` | `error: &MacroError`, `context: &ExpansionContext` | `String` | 格式化宏错误信息为用户友好的字符串 |
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `ExpansionContext` | 新的展开上下文 |
 
-## 设计考虑
+### define_syntax_rules_macro
 
-### 卫生宏实现策略
+定义syntax-rules风格的宏。
 
-1. **标识符重命名** - 自动为宏内变量生成唯一名称
-2. **环境隔离** - 宏在独立环境中展开，避免变量泄露
-3. **词汇作用域保持** - 保持变量的原始绑定环境
-4. **捕获避免** - 检测并避免意外的变量捕获
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| context | `&mut ExpansionContext` | 宏展开上下文 |
+| name | `String` | 宏名称 |
+| literals | `Vec<String>` | 字面值标识符列表 |
+| rules | `Vec<SyntaxRule>` | 语法规则列表 |
 
-### 模式匹配算法优化
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Result<(), MacroError>` | 成功或错误 |
 
-1. **提前失败** - 在匹配过程中尽早检测失败情况
-2. **绑定去重** - 合并相同的模式变量绑定
-3. **椭圆优化** - 特殊处理椭圆模式的匹配和展开
-4. **缓存策略** - 缓存常用模式的匹配结果
+### define_traditional_macro
 
-### 性能优化策略
+定义传统define-macro风格的宏。
 
-1. **延迟展开** - 只在需要时展开宏调用
-2. **展开缓存** - 缓存相同输入的展开结果
-3. **增量处理** - 只重新展开变化的部分
-4. **编译时优化** - 在编译期完成宏展开
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| context | `&mut ExpansionContext` | 宏展开上下文 |
+| name | `String` | 宏名称 |
+| params | `Vec<String>` | 参数列表 |
+| body | `SExpr` | 宏体 |
 
-## 待解决问题
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Result<(), MacroError>` | 成功或错误 |
 
-### TODO-1: 椭圆模式复杂性
+### lookup_macro
 
-**问题**: 嵌套椭圆模式的匹配和展开逻辑复杂
-**影响**: 可能导致错误的匹配结果或展开失败
-**解决方向**: 设计递归椭圆处理算法，建立绑定验证机制
+在环境中查找宏定义。
 
-### TODO-2: 宏展开追踪
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| context | `&ExpansionContext` | 宏展开上下文 |
+| name | `&str` | 宏名称 |
 
-**问题**: 如何有效追踪多层宏展开的过程
-**影响**: 调试困难，错误定位不准确
-**解决方向**: 建立展开树结构，保持原始位置映射
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Option<MacroValue>` | 宏定义或None |
 
-### TODO-3: 过程式宏支持
+### expand_from_string
 
-**问题**: syntax-transformer 类型宏的 FFI 边界处理
-**影响**: 限制宏的表达能力
-**解决方向**: 设计安全的函数指针包装，建立类型安全边界
+从字符串源代码直接进行宏展开的便利函数。
 
-### TODO-4: 宏作用域管理
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| source | `&str` | 源代码字符串 |
+| context | `&mut ExpansionContext` | 宏展开上下文 |
 
-**问题**: 宏定义的可见性和生命周期管理
-**影响**: 可能出现宏定义覆盖或意外可见性
-**解决方向**: 建立宏命名空间机制，明确宏的作用域规则
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| `Result<Vec<SExpr>, MacroError>` | 展开后的S表达式列表或错误 |
 
-### TODO-5: 循环依赖检测
+## 关键设计问题
 
-**问题**: 宏之间的循环调用检测算法效率
-**影响**: 无法及时发现循环依赖，可能导致栈溢出
-**解决方向**: 实现高效的依赖图分析算法
+### 问题：模式匹配算法的效率优化和复杂模式处理
+
+TODO
+
+### 问题：宏展开过程中的位置信息保持和错误追踪
+
+TODO
+
+### 问题：椭圆模式的匹配和展开算法设计
+
+TODO
+
+### 问题：卫生宏的实现策略和变量名冲突避免
+
+TODO
+
+### 问题：宏展开的循环依赖检测和防止无限递归
+
+TODO
+
+### 问题：与环境管理器的集成和宏作用域管理
+
+TODO
