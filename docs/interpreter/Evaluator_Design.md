@@ -1,209 +1,231 @@
-# 执行器设计
+# Evaluator 设计
 
-## 文档状态
+状态：Draft-2
 
-**当前版本**: Draft-2  
-**最后更新**: 2024年  
-**状态**: 实现阶段
+## 概述
 
-## 设计目标
+Evaluator 模块负责对语法分析器生成的 S 表达式抽象语法树进行求值计算。本模块采用 **函数式状态机** 设计，将 Evaluator 抽象为基于不可变状态的状态机，通过三个核心函数驱动计算过程：
 
-- **高效求值**：优化的表达式求值算法，支持各种表达式类型的快速分派
-- **尾递归优化**：避免栈溢出的尾调用优化，支持深度递归计算
-- **错误处理**：完整的运行时错误管理，提供详细的错误位置和上下文信息
-- **调试支持**：详细的执行轨迹和调用栈，支持逐步执行和变量监视
+1. **初始化函数** (`initialize_frame`)：创建初始栈帧状态
+2. **状态转移函数** (`step_evaluation`)：执行单步计算，返回新的栈帧状态
+3. **继续判定函数** (`should_continue`)：判断是否继续计算或已完成求值
 
-## 核心数据结构
+## 模块职责（功能性需求）
 
-### 求值器配置 (EvalOptions)
+- **表达式求值**：对各种 Scheme 表达式进行求值，包括原子值、函数调用、特殊形式等
+- **环境管理**：维护变量绑定的词法作用域环境链
+- **调用栈管理**：通过不可变链式栈结构管理函数调用和递归
+- **错误处理**：提供详细的运行时错误信息，包含调用栈和位置信息
+- **特殊形式处理**：实现 Scheme 的特殊语法构造（define、if、lambda、let 等）
 
+## 设计目标（非功能性需求）
+
+- **函数式纯净性**：所有状态变更通过创建新的不可变数据结构实现，无副作用
+- **内存效率**：通过 Rc 共享不变数据，避免不必要的数据复制
+- **调试友好**：保持完整的调用栈信息和源码位置，便于错误定位
+- **可测试性**：状态机模型使得每个计算步骤都可以独立测试和验证
+- **可扩展性**：模块化设计便于添加新的特殊形式和内置函数
+
+## 关键数据类型
+
+### Frame - 调用栈帧
 ```rust
+/// 调用栈帧 - 表示单次函数调用或表达式求值的执行上下文
 #[derive(Debug, Clone)]
-pub struct EvalOptions {
-    pub tail_call_optimization: bool,     // 是否启用尾调用优化
-    pub max_call_depth: usize,           // 最大调用深度限制
-    pub debug_mode: bool,                // 是否启用调试模式
-    pub trace_execution: bool,           // 是否记录执行轨迹
+pub struct Frame {
+    /// 当前栈帧的环境（变量绑定）
+    pub environment: Rc<Environment>,
+    /// 待求值的表达式栈（后进先出）
+    pub expression_stack: Rc<ExpressionStack>,
+    /// 父调用栈帧（用于返回）
+    pub parent_frame: Option<Rc<Frame>>,
+    /// 当前栈帧的标识信息（用于调试）
+    pub frame_info: FrameInfo,
+}
+
+/// 栈帧标识信息
+#[derive(Debug, Clone)]
+pub struct FrameInfo {
+    /// 栈帧类型（函数调用、特殊形式等）
+    pub frame_type: FrameType,
+    /// 源码位置信息
+    pub span: Rc<Span>,
+}
+
+/// 栈帧类型
+#[derive(Debug, Clone)]
+pub enum FrameType {
+    /// 顶层表达式求值
+    TopLevel,
+    /// 函数调用
+    FunctionCall { function_name: Option<String> },
+    /// 特殊形式
+    SpecialForm { form_name: String },
+    /// Let 绑定
+    LetBinding,
 }
 ```
 
-### 调用帧 (CallFrame)
-
+### Environment - 词法环境
 ```rust
+/// 词法环境 - 不可变的变量绑定环境，形成链式结构
 #[derive(Debug, Clone)]
-pub struct CallFrame {
-    pub function_name: Option<String>,   // 函数名（如果有）
-    pub environment: EnvironmentId,      // 调用环境
-    pub location: SourceLocation,        // 调用位置
-    pub tail_position: bool,             // 是否在尾位置
+pub struct Environment {
+    /// 当前环境的变量绑定
+    pub bindings: HashMap<String, Rc<SExpr>>,
+    /// 父环境（外层作用域）
+    pub parent: Option<Rc<Environment>>,
 }
 ```
 
-### 求值上下文 (EvalContext)
-
+### ExpressionStack - 表达式栈
 ```rust
-#[derive(Debug)]
-pub struct EvalContext {
-    pub env_manager: EnvironmentManager, // 环境管理器
-    pub call_stack: Vec<CallFrame>,      // 调用栈
-    pub options: EvalOptions,            // 求值选项
-    pub trace: Vec<TraceEntry>,          // 执行轨迹
-}
-
+/// 表达式栈 - 不可变的表达式栈，用于管理待求值的表达式
 #[derive(Debug, Clone)]
-pub struct TraceEntry {
-    pub expression: SExpr,
-    pub environment: EnvironmentId,
-    pub result: Option<Value>,
-    pub timestamp: u64,
+pub enum ExpressionStack {
+    /// 空栈
+    Empty,
+    /// 包含表达式的栈
+    Cons {
+        /// 栈顶表达式
+        head: Rc<SExpr>,
+        /// 栈尾
+        tail: Rc<ExpressionStack>,
+    },
 }
 ```
 
-### 运行时错误类型 (EvalError)
-
+### ContinuationResult - 继续判定结果
 ```rust
+/// 继续判定结果（用于 should_continue 函数）
 #[derive(Debug, Clone)]
-pub enum EvalError {
-    UndefinedVariable {
-        name: String,
-        location: SourceLocation,
-        available_vars: Vec<String>,
-    },
-    TypeError {
-        expected: ValueType,
-        actual: ValueType,
-        location: SourceLocation,
-    },
-    ArityMismatch {
-        function_name: String,
-        expected: Arity,
-        actual: usize,
-        location: SourceLocation,
-    },
-    StackOverflow {
-        current_depth: usize,
-        max_depth: usize,
-        location: SourceLocation,
-    },
-    TailCallOptimizationFailed {
-        reason: String,
-        location: SourceLocation,
-    },
-    RuntimeError {
-        message: String,
-        location: SourceLocation,
-    },
+pub enum ContinuationResult {
+    /// 继续计算，返回当前栈帧
+    Continue(Frame),
+    /// 计算完成，返回最终值
+    Complete(Rc<SExpr>),
 }
 
+/// 单步求值结果类型（用于 step_evaluation 函数）
+pub type StepResult = Result<Frame, EvaluationError>;
+
+/// 求值错误
 #[derive(Debug, Clone)]
-pub enum Arity {
-    Exact(usize),                        // 精确参数数量
-    AtLeast(usize),                      // 至少参数数量
-    Range(usize, usize),                 // 参数数量范围
+pub enum EvaluationError {
+    /// 未定义的变量
+    UndefinedVariable { 
+        name: String, 
+        span: Rc<Span> 
+    },
+    /// 类型错误
+    TypeError { 
+        expected: String, 
+        found: String, 
+        span: Rc<Span> 
+    },
+    /// 参数数量错误
+    ArityError { 
+        expected: usize, 
+        found: usize, 
+        span: Rc<Span> 
+    },
+    /// 其他运行时错误
+    RuntimeError { 
+        message: String, 
+        span: Rc<Span> 
+    },
 }
 ```
 
-### 内置函数特征 (BuiltinFunction)
+## 核心函数接口（对外接口）
 
-```rust
-pub trait BuiltinFunction {
-    fn name(&self) -> &str;
-    fn arity(&self) -> Arity;
-    fn call(&self, args: &[Value], context: &mut EvalContext) -> Result<Value, EvalError>;
-    fn is_special_form(&self) -> bool { false }
-    fn description(&self) -> &str;
-}
-```
+**重要说明**：本节只记录对外暴露的主要接口函数，不包括内部实现函数。内部辅助函数、私有方法和实现细节不在此处描述。
 
-## 核心函数接口
+### initialize_frame (对外接口)
 
-### 主要求值函数 (对外接口)
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| expression | Rc<SExpr> | 待求值的表达式 |
+| parent_frame | Option<Rc<Frame>> | 可选的父栈帧 |
+| environment | Option<Rc<Environment>> | 可选的初始环境，如果为 None 则使用全局环境 |
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `eval_expression` | `expr: &SExpr`, `env: EnvironmentId`, `context: &mut EvalContext` | `Result<Value, EvalError>` | 主要求值函数，对任意表达式进行求值 |
-| `eval_program` | `program: &[SExpr]`, `env: EnvironmentId`, `context: &mut EvalContext` | `Result<Value, EvalError>` | 求值程序（表达式序列），返回最后一个表达式的值 |
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| Frame | 初始化的新栈帧，ready for evaluation |
 
-### 特殊形式求值函数 (对外接口)
+### step_evaluation (对外接口)
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `eval_if` | `condition: &SExpr`, `then_expr: &SExpr`, `else_expr: Option<&SExpr>`, `env: EnvironmentId`, `context: &mut EvalContext` | `Result<Value, EvalError>` | 求值条件表达式 |
-| `eval_lambda` | `params: &[String]`, `body: &SExpr`, `env: EnvironmentId`, `context: &EvalContext` | `Result<Value, EvalError>` | 创建闭包函数 |
-| `eval_define` | `name: &str`, `value: &SExpr`, `env: EnvironmentId`, `context: &mut EvalContext` | `Result<Value, EvalError>` | 定义变量或函数 |
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| frame | Frame | 当前栈帧状态 |
 
-### 函数调用函数 (对外接口)
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| StepResult | 单步求值后的新栈帧，如果出错则返回错误 |
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `apply_function` | `function: &Value`, `args: &[SExpr]`, `env: EnvironmentId`, `context: &mut EvalContext` | `Result<Value, EvalError>` | 应用函数到参数列表 |
-| `call_builtin` | `builtin: &dyn BuiltinFunction`, `args: &[Value]`, `context: &mut EvalContext` | `Result<Value, EvalError>` | 调用内置函数 |
+### should_continue (对外接口)
 
-### 环境和变量管理函数 (对外接口)
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| frame | Frame | 要检查的栈帧 |
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `lookup_variable` | `name: &str`, `env: EnvironmentId`, `context: &EvalContext` | `Result<Value, EvalError>` | 查找变量值 |
-| `define_variable` | `name: String`, `value: Value`, `env: EnvironmentId`, `context: &mut EvalContext` | `Result<(), EvalError>` | 在环境中定义变量 |
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| ContinuationResult | Continue(Frame) 表示继续计算，Complete(Rc<SExpr>) 表示已完成并返回最终值 |
 
-### 错误处理和调试函数 (对外接口)
+### evaluate (对外接口)
 
-| 函数名 | 参数 | 返回值 | 描述 |
-|--------|------|--------|------|
-| `format_eval_error` | `error: &EvalError`, `context: &EvalContext` | `String` | 格式化求值错误为用户友好的消息 |
-| `get_call_stack_trace` | `context: &EvalContext` | `Vec<String>` | 获取当前调用栈的字符串表示 |
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| expression | Rc<SExpr> | 待求值的表达式 |
+| environment | Option<Rc<Environment>> | 可选的初始环境 |
 
-## 设计考虑
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| Result<Rc<SExpr>, EvaluationError> | 求值结果：成功返回值或错误 |
 
-### 尾递归优化实现
+### evaluate_with_steps (对外接口)
 
-1. **尾位置检测** - 识别函数调用是否在尾位置
-2. **栈帧复用** - 复用当前栈帧而非创建新栈帧
-3. **迭代实现** - 将递归调用转换为迭代循环
-4. **环境管理** - 正确处理尾调用中的环境切换
+#### 参数列表
+| 参数名 | 类型 | 描述 |
+|--------|------|------|
+| expression | Rc<SExpr> | 待求值的表达式 |
+| environment | Option<Rc<Environment>> | 可选的初始环境 |
 
-### 错误处理策略
+#### 返回值
+| 类型 | 描述 |
+|------|------|
+| impl Iterator<Item = ContinuationResult> | 返回状态机执行过程的迭代器，最后一项为 Complete |
 
-1. **位置保持** - 在错误中保持原始表达式位置信息
-2. **上下文收集** - 收集错误发生时的环境和调用栈信息
-3. **用户友好** - 提供清晰的错误消息和修复建议
-4. **错误恢复** - 支持从某些运行时错误中恢复
+## 关键设计问题
 
-### 性能优化考虑
+### 问题：如何设计不可变的表达式栈以支持复杂的求值过程？
+TODO
 
-1. **表达式缓存** - 缓存常量表达式的求值结果
-2. **符号表优化** - 优化变量查找的性能
-3. **内存管理** - 有效管理值的生命周期
-4. **惰性求值** - 在适当情况下使用惰性求值
+### 问题：如何在函数式设计中高效实现尾调用优化？
+TODO
 
-## 待解决问题
+### 问题：如何设计环境链式结构以支持词法作用域和闭包？
+TODO
 
-### TODO-1: 复杂尾递归优化
+### 问题：如何处理特殊形式（define、if、lambda 等）的求值逻辑？
+TODO
 
-**问题**: 相互递归函数和复杂控制流的尾调用优化
-**影响**: 某些递归模式无法优化，可能导致栈溢出
-**解决方向**: 实现蹦床技术和连续传递风格转换
+### 问题：如何在不可变设计中维护调用栈信息用于错误报告？
+TODO
 
-### TODO-2: 调试器集成
+### 问题：如何设计内置函数的注册和调用机制？
+TODO
 
-**问题**: 如何与外部调试器集成，提供断点和单步执行
-**影响**: 调试体验不够完善
-**解决方向**: 设计调试器接口，支持断点设置和状态查询
-
-### TODO-3: 错误恢复机制
-
-**问题**: 运行时错误后的状态恢复和继续执行
-**影响**: 错误后无法继续交互式会话
-**解决方向**: 实现错误隔离和状态回滚机制
-
-### TODO-4: 值类型优化
-
-**问题**: 值的拷贝和移动语义优化
-**影响**: 大量值拷贝可能影响性能
-**解决方向**: 引入值的引用语义和写时拷贝机制
-
-### TODO-5: 并发求值支持
-
-**问题**: 多线程环境下的安全求值
-**影响**: 无法利用多核性能进行并行计算
-**解决方向**: 设计线程安全的环境管理和值共享机制
+## 参考文献
+- [Structure and Interpretation of Computer Programs](https://mitpress.mit.edu/sites/default/files/sicp/index.html)
+- [Scheme R7RS Specification](https://small.r7rs.org/)
+- [Rust Functional Programming Patterns](https://doc.rust-lang.org/book/)
