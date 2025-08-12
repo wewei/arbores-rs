@@ -604,12 +604,13 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                // 验证参数列表格式
                let param_names = parse_parameter_list(&params)?;
                
-               // 创建闭包对象
-               let closure = SExpr::new(SExprContent::Closure {
+               // 创建闭包对象（运行时值）
+               let closure = RuntimeValue::Closure {
                    parameters: param_names,
                    body: body.clone(),
                    captured_env: state.frame.env.clone(), // 捕获当前环境
-               });
+                   name: None,
+               };
                
                // 直接返回闭包，无需状态转移
                (state.frame.continuation)(closure)
@@ -1097,7 +1098,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
    #[derive(Clone, Debug)]
    pub enum TailContext {
        TailPosition,      // 在尾位置
-       NonTailPosition,   // 不在尾位置
+       NonTailPosition,   // 不在尾位置，需要保留调用上下文
    }
    
    impl EvalState {
@@ -1276,6 +1277,22 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
     - **状态传播**：确保尾位置信息正确传播
     - **环境管理**：正确处理环境的生命周期和引用
     - **错误处理**：保证错误信息的完整性和可追踪性
+
+## 重要设计决策：SExpr vs RuntimeValue
+
+**注意**：在本设计文档中，我们使用了 `SExpr` 来表示运行时值，但在实际实现中，我们应该采用更清晰的设计：
+
+- **SExpr**：纯粹的语法结构，只用于表示解析阶段的 S 表达式
+- **RuntimeValue**：运行时值类型，包含所有可能的计算结果，包括闭包、内置函数等
+
+这种分离有以下优势：
+1. **概念清晰**：解析时和运行时的值类型明确分离
+2. **类型安全**：编译时防止在错误的阶段使用错误的类型  
+3. **可扩展性**：运行时概念不会污染语法结构的纯粹性
+
+详见：[Runtime_Value_Design.md](./Runtime_Value_Design.md)
+
+---
 
 ## 参考文献
 
