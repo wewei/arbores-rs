@@ -69,7 +69,7 @@ fn s_expr_to_runtime_value(expr: &SExpr) -> RuntimeValue {
                 .iter()
                 .map(|e| s_expr_to_runtime_value(e))
                 .collect();
-            RuntimeValue::Vector(runtime_elements)
+            RuntimeValue::Vector(Rc::new(runtime_elements))
         },
     }
 }

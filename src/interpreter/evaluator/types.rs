@@ -36,7 +36,8 @@ pub enum RuntimeValue {
     /// 空列表
     Nil,
     /// 向量
-    Vector(Vec<RuntimeValue>),
+    /// 使用 Rc 包装以支持共享，减少克隆开销
+    Vector(Rc<Vec<RuntimeValue>>),
     /// 用户定义的 Lambda 函数
     Lambda {
         parameters: Vec<String>,     // 参数名列表
@@ -527,7 +528,7 @@ impl std::fmt::Display for RuntimeValue {
             },
             RuntimeValue::Vector(elements) => {
                 write!(f, "#(")?;
-                for (i, element) in elements.iter().enumerate() {
+                for (i, element) in elements.as_ref().iter().enumerate() {
                     if i > 0 {
                         write!(f, " ")?;
                     }

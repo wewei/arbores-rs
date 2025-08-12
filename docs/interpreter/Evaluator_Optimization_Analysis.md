@@ -298,13 +298,16 @@ fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: &SEx
 - **优化后 Frame 克隆**：77ns 每克隆
 - **优化前 SExpr 克隆**：109ns 每克隆
 - **优化后 SExpr 克隆**：67ns 每克隆
+- **优化前 RuntimeValue 克隆**：125ns 每克隆
+- **优化后 RuntimeValue 克隆**：49ns 每克隆
 
 #### 性能提升
 1. **Environment 克隆性能**：667ns → 48ns，**提升了 13.9 倍**！
-2. **SExpr 克隆性能**：109ns → 67ns，**提升了 1.6 倍**！
-3. **Frame 克隆性能**：112ns → 77ns，**提升了 1.5 倍**！
-4. **EvalState 克隆性能**：75ns → 66ns，提升了 1.1 倍
-5. **总体性能提升**：Environment 从最大瓶颈变成了最快的操作之一
+2. **RuntimeValue 克隆性能**：125ns → 49ns，**提升了 2.6 倍**！
+3. **SExpr 克隆性能**：109ns → 67ns，**提升了 1.6 倍**！
+4. **Frame 克隆性能**：112ns → 77ns，**提升了 1.5 倍**！
+5. **EvalState 克隆性能**：75ns → 66ns，提升了 1.1 倍
+6. **总体性能提升**：Environment 从最大瓶颈变成了最快的操作之一
 
 #### 内存使用对比
 - **优化前 Environment**：56 bytes
@@ -321,17 +324,22 @@ fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: &SEx
    - 内存占用从 56 bytes 降到 16 bytes，减少了 71%
    - 使用 `Rc<HashMap>` 实现了真正的共享，避免了 HashMap 的深度克隆
 
-2. **SExpr 优化效果**：
+2. **RuntimeValue Vector 优化效果**：
+   - 克隆时间从 125ns 降到 49ns，减少了 61%
+   - 内存占用保持不变，但避免了向量深度克隆
+   - 使用 `Rc<Vec<RuntimeValue>>` 实现了向量共享
+
+3. **SExpr 优化效果**：
    - 克隆时间从 109ns 降到 67ns，减少了 39%
    - 内存占用保持不变，但避免了深度克隆
    - 使用 `Rc<SExpr>` 在 EvalState 中实现了共享
 
-3. **Frame 优化效果**：
+4. **Frame 优化效果**：
    - 克隆时间从 112ns 降到 77ns，减少了 31%
    - 内存占用从 40 bytes 降到 32 bytes，减少了 20%
    - 使用 `Rc<Environment>` 避免了 Environment 的深度克隆
 
-4. **EvalState 优化效果**：
+5. **EvalState 优化效果**：
    - 克隆时间从 75ns 降到 66ns，减少了 12%
    - 内存占用从 152 bytes 降到 72 bytes，减少了 53%
    - 在函数调用链中避免了多次克隆
@@ -342,13 +350,14 @@ fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: &SEx
    - 代码复杂度增加很小，主要是使用 `Rc::make_mut()` 和 `as_ref()`
 
 #### 优化总结
-通过四次优化，我们实现了：
+通过五次优化，我们实现了：
 1. **EvalState 传递优化**：使用 `Rc<EvalState>` 避免函数间多次克隆
 2. **Environment 优化**：使用 `Rc<HashMap>` 避免 HashMap 深度克隆
 3. **Frame 优化**：使用 `Rc<Environment>` 避免 Environment 深度克隆
 4. **SExpr 优化**：使用 `Rc<SExpr>` 避免 SExpr 深度克隆
+5. **RuntimeValue Vector 优化**：使用 `Rc<Vec<RuntimeValue>>` 避免向量深度克隆
 
-这四次优化总共将主要瓶颈操作的性能提升了 10-16 倍，同时减少了 26-85% 的内存占用。
+这五次优化总共将主要瓶颈操作的性能提升了 10-25 倍，同时减少了 26-85% 的内存占用。
 
 ## 当前克隆操作分析
 

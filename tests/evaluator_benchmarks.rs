@@ -169,11 +169,11 @@ fn benchmark_runtime_value_clone() {
             car: Rc::new(RuntimeValue::Number(1.0)),
             cdr: Rc::new(RuntimeValue::Number(2.0)),
         },
-        RuntimeValue::Vector(vec![
+        RuntimeValue::Vector(Rc::new(vec![
             RuntimeValue::Number(1.0),
             RuntimeValue::Number(2.0),
             RuntimeValue::Number(3.0),
-        ]),
+        ])),
     ];
     
     let iterations = 100_000;
