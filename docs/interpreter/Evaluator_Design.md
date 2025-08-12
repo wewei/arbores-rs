@@ -45,8 +45,8 @@ pub struct EvalState {
 pub struct Frame {
     /// 当前栈的环境
     env: Environment,
-    /// 返回的 Lambda 回调，输入返回的 SExpr，返回新的 EvalState 或报错
-    continuation: Box<dyn Fn(SExpr) -> Result<EvalState, EvaluateError>>,
+    /// 返回的 Lambda 回调，输入返回的 SExpr，返回 EvaluateResult
+    continuation: Box<dyn Fn(SExpr) -> EvaluateResult>,
     /// 父栈帧（链式结构）
     parent: Option<Box<Frame>>,
 }
@@ -120,10 +120,74 @@ pub enum EvaluateResult {
 ## 关键设计问题
 
 ### 问题：如何初始化 EvalState？
-TODO
+
+EvalState 的初始化需要创建一个根栈帧和待求值的表达式：
+
+1. **创建根栈帧**：
+   - `env`: 使用传入的全局环境
+   - `continuation`: 创建一个终止回调函数，当求值完成时返回 `Completed` 结果
+   - `parent`: 设为 `None`，表示这是最顶层的栈帧
+
+2. **设置待求值表达式**：
+   - `expr`: 直接使用传入的 SExpr
+
+```rust
+fn init_eval_state(expr: SExpr, env: Environment) -> EvalState {
+    let root_frame = Frame {
+        env,
+        continuation: Box::new(|result| {
+            // 根栈帧的 continuation，表示求值完成
+            EvaluateResult::Completed(result)
+        }),
+        parent: None,
+    };
+    
+    EvalState {
+        frame: root_frame,
+        expr,
+    }
+}
+```
+
+这种设计的优势：
+- **环境管理**：全局环境保存在根栈帧中
+- **统一接口**：continuation 返回 EvaluateResult，支持所有三种状态
+- **简洁实现**：根栈帧的 continuation 直接返回完成状态
 
 ### 问题：如何设计 evaluate 主循环？
-TODO
+
+evaluate 主循环采用状态机模式，反复调用 `evaluate_step` 直到完成或出错：
+
+1. **初始化状态**：调用 `init_eval_state` 创建初始的 EvalState
+
+2. **循环执行**：
+   - 调用 `evaluate_step(current_state)`
+   - 根据返回的 `EvaluateResult` 进行分支处理：
+     - `Completed(result)`: 返回最终结果
+     - `Continue(next_state)`: 更新当前状态，继续循环
+     - `Error(error)`: 返回错误
+
+3. **实现示例**：
+```rust
+fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
+    let mut current_state = init_eval_state(expr, env);
+    
+    loop {
+        match evaluate_step(current_state) {
+            EvaluateResult::Completed(result) => return Ok(result),
+            EvaluateResult::Continue(next_state) => {
+                current_state = next_state;
+            },
+            EvaluateResult::Error(error) => return Err(error),
+        }
+    }
+}
+```
+
+这种设计的优势：
+- **可控制性**：每一步都可以被观察和调试
+- **可中断性**：循环可以在任意点暂停或终止
+- **尾递归友好**：状态转移不会增加调用栈深度
 
 ### 问题：单步迭代时，如何判定函数调用和特殊形式？
 TODO
