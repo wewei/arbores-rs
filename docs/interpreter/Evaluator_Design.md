@@ -54,8 +54,8 @@ pub enum TailContext {
 pub struct Frame {
     /// 当前栈的环境
     env: Environment,
-    /// 返回的 Lambda 回调，输入返回的 SExpr，返回 EvaluateResult
-    continuation: Box<dyn Fn(SExpr) -> EvaluateResult>,
+    /// 返回的 Lambda 回调，输入返回的 RuntimeValue，返回 EvaluateResult
+    continuation: Box<dyn Fn(RuntimeValue) -> EvaluateResult>,
     /// 父栈帧（链式结构）
     parent: Option<Box<Frame>>,
 }
@@ -66,8 +66,8 @@ pub struct Frame {
 /// 环境 - 变量绑定和作用域管理
 /// 链式结构，每个节点包含局部绑定并引用上级环境
 pub struct Environment {
-    /// 当前环境的变量绑定表 (变量名 -> 值)
-    bindings: HashMap<String, SExpr>,
+    /// 当前环境的变量绑定表 (变量名 -> 运行时值)
+    bindings: HashMap<String, RuntimeValue>,
     /// 上级环境（链式结构）
     parent: Option<Box<Environment>>,
 }
@@ -107,8 +107,8 @@ pub enum EvaluateError {
 /// 求值步骤结果 - 表示单步求值的三种可能结果
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvaluateResult {
-    /// 求值完成，返回最终结果
-    Completed(SExpr),
+    /// 求值完成，返回最终结果（运行时值）
+    Completed(RuntimeValue),
     /// 需要继续求值，返回下一个状态
     Continue(EvalState),
     /// 求值出错，返回错误信息
@@ -131,7 +131,7 @@ pub enum EvaluateResult {
 #### 返回值
 | 类型 | 描述 |
 |------|------|
-| Result<SExpr, EvaluateError> | 求值结果的 S 表达式或错误信息 |
+| Result<RuntimeValue, EvaluateError> | 求值结果的运行时值或错误信息 |
 
 ### evaluate_step() - 单步状态转移函数 (对外接口)
 
@@ -173,6 +173,7 @@ fn init_eval_state(expr: SExpr, env: Environment) -> EvalState {
     EvalState {
         frame: root_frame,
         expr,
+        tail_context: TailContext::TailPosition, // 顶层表达式在尾位置
     }
 }
 ```
@@ -197,7 +198,7 @@ evaluate 主循环采用状态机模式，反复调用 `evaluate_step` 直到完
 
 3. **实现示例**：
 ```rust
-fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
+fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError> {
     let mut current_state = init_eval_state(expr, env);
     
     loop {
@@ -231,17 +232,21 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
    fn evaluate_step(state: EvalState) -> EvaluateResult {
        match &state.expr.content {
            // 自求值表达式
-           SExprContent::Atom(Value::Number(_)) | 
-           SExprContent::Atom(Value::String(_)) | 
-           SExprContent::Atom(Value::Bool(_)) => {
-               // 直接调用当前 frame 的 continuation
-               (state.frame.continuation)(state.expr)
+           SExprContent::Atom(Value::Number(n)) => {
+               // 转换为运行时值并调用 continuation
+               (state.frame.continuation)(RuntimeValue::Number(*n))
+           },
+           SExprContent::Atom(Value::String(s)) => {
+               (state.frame.continuation)(RuntimeValue::String(s.clone()))
+           },
+           SExprContent::Atom(Value::Bool(b)) => {
+               (state.frame.continuation)(RuntimeValue::Boolean(*b))
            },
            
            // 符号（变量引用）
            SExprContent::Atom(Value::Symbol(name)) => {
                match lookup_variable(name, &state.frame.env) {
-                   Some(value) => (state.frame.continuation)(value),
+                   Some(value) => (state.frame.continuation)(value.clone()),
                    None => EvaluateResult::Error(EvaluateError::UndefinedVariable(name.clone())),
                }
            },
@@ -324,9 +329,9 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
    ```rust
    fn evaluate_arguments(
        parent_frame: Frame, 
-       function_value: SExpr, 
+       function_value: RuntimeValue, 
        remaining_args: &SExpr, 
-       evaluated_args: Vec<SExpr>
+       evaluated_args: Vec<RuntimeValue>
    ) -> EvaluateResult {
        match remaining_args {
            // 没有更多参数，开始函数应用
@@ -352,6 +357,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                EvaluateResult::Continue(EvalState {
                    frame: new_frame,
                    expr: car.clone(),
+                   tail_context: TailContext::NonTailPosition,
                })
            },
            
@@ -364,22 +370,22 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
    ```rust
    fn apply_function(
        parent_frame: Frame, 
-       function_value: SExpr, 
-       arguments: Vec<SExpr>
+       function_value: RuntimeValue, 
+       arguments: Vec<RuntimeValue>
    ) -> EvaluateResult {
-       match &function_value.content {
+       match &function_value {
            // 内置函数
-           SExprContent::Atom(Value::BuiltinFunction(func)) => {
-               match func.call(&arguments) {
+           RuntimeValue::BuiltinFunction { func, .. } => {
+               match func(&arguments) {
                    Ok(result) => (parent_frame.continuation)(result),
                    Err(error) => EvaluateResult::Error(error),
                }
            },
            
            // 用户定义的 lambda 函数
-           SExprContent::Lambda { params, body, closure_env } => {
+           RuntimeValue::Closure { parameters, body, captured_env, .. } => {
                // 创建新环境，绑定参数
-               let new_env = bind_parameters(params, &arguments, closure_env)?;
+               let new_env = bind_parameters(parameters, &arguments, captured_env)?;
                
                let new_frame = Frame {
                    env: new_env,
@@ -390,6 +396,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                EvaluateResult::Continue(EvalState {
                    frame: new_frame,
                    expr: body.clone(),
+                   tail_context: TailContext::TailPosition, // 函数体在尾位置
                })
            },
            
@@ -425,8 +432,9 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                // 检查是否只有一个参数
                match cdr.content {
                    SExprContent::Nil => {
-                       // 直接返回被引用的表达式，不求值
-                       (state.frame.continuation)(car.clone())
+                       // 将被引用的表达式转换为运行时值并返回
+                       let quoted_value = RuntimeValue::from(car.clone());
+                       (state.frame.continuation)(quoted_value)
                    },
                    _ => {
                        // quote 接受多个参数是错误的
@@ -502,12 +510,13 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                };
 
                // 创建 continuation 来处理条件求值完成后的逻辑
-               let if_continuation = Box::new(move |condition_result: SExpr| -> EvaluateResult {
+               let if_continuation = Box::new(move |condition_result: RuntimeValue| -> EvaluateResult {
                    if is_truthy(&condition_result) {
                        // 条件为真，求值 then 分支
                        EvaluateResult::Continue(EvalState {
                            expr: then_expr.clone(),
                            frame: state.frame.clone(), // 使用原始 frame
+                           tail_context: state.tail_context.clone(), // 继承尾位置状态
                        })
                    } else {
                        // 条件为假，求值 else 分支（如果存在）
@@ -515,10 +524,11 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                            Some(else_expr) => EvaluateResult::Continue(EvalState {
                                expr: else_expr.clone(),
                                frame: state.frame.clone(),
+                               tail_context: state.tail_context.clone(), // 继承尾位置状态
                            }),
                            None => {
                                // 没有 else 分支，返回未定义值
-                               (state.frame.continuation)(SExpr::undefined())
+                               (state.frame.continuation)(RuntimeValue::Undefined)
                            }
                        }
                    }
@@ -535,16 +545,17 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                EvaluateResult::Continue(EvalState {
                    expr: condition,
                    frame: condition_frame,
+                   tail_context: TailContext::NonTailPosition, // 条件不在尾位置
                })
            },
            _ => EvaluateResult::Error(EvaluateError::InvalidIfSyntax),
        }
    }
 
-   fn is_truthy(expr: &SExpr) -> bool {
+   fn is_truthy(value: &RuntimeValue) -> bool {
        // 在 Scheme 中，除了 #f 以外的所有值都被视为真
-       match &expr.content {
-           SExprContent::Boolean(false) => false,
+       match value {
+           RuntimeValue::Boolean(false) => false,
            _ => true,
        }
    }
@@ -821,7 +832,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
 4. **环境修改接口**：
    ```rust
    impl Environment {
-       pub fn define(&mut self, name: String, value: SExpr) {
+       pub fn define(&mut self, name: String, value: RuntimeValue) {
            // 在当前（最顶层）环境中定义变量
            // 如果变量已存在，则更新其值
            if let Some(ref mut bindings) = self.bindings {
@@ -829,7 +840,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
            }
        }
        
-       pub fn set(&mut self, name: &str, value: SExpr) -> Result<(), EvaluateError> {
+       pub fn set(&mut self, name: &str, value: RuntimeValue) -> Result<(), EvaluateError> {
            // 在环境链中查找并更新已存在的变量
            if let Some(ref mut bindings) = self.bindings {
                if bindings.contains_key(name) {
