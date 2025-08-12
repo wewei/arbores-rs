@@ -125,7 +125,8 @@ pub struct EvalState {
 #[derive(Clone, Debug)]
 pub struct Frame {
     /// 当前栈的环境
-    pub env: Environment,
+    /// 使用 Rc 包装以支持共享，减少克隆开销
+    pub env: Rc<Environment>,
     /// 返回的 Lambda 回调，输入返回的 RuntimeValue，返回 EvaluateResult
     pub continuation: Continuation,
     /// 父栈帧（链式结构）
@@ -336,7 +337,7 @@ impl Frame {
     /// 创建新的根栈帧
     pub fn new_root(env: Environment, continuation: Continuation) -> Self {
         Self {
-            env,
+            env: Rc::new(env),
             continuation,
             parent: None,
         }
@@ -345,7 +346,7 @@ impl Frame {
     /// 创建带父栈帧的新栈帧
     pub fn with_parent(env: Environment, continuation: Continuation, parent: Frame) -> Self {
         Self {
-            env,
+            env: Rc::new(env),
             continuation,
             parent: Some(Rc::new(parent)),
         }

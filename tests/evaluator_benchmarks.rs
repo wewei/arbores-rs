@@ -101,7 +101,7 @@ fn benchmark_frame_clone() {
         func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
     };
     let frame = Frame {
-        env,
+        env: Rc::new(env),
         continuation,
         parent: None,
     };
@@ -128,7 +128,7 @@ fn benchmark_frame_with_parent_clone() {
         func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
     };
     let parent_frame = Frame {
-        env: parent_env,
+        env: Rc::new(parent_env),
         continuation: parent_continuation,
         parent: None,
     };
@@ -138,7 +138,7 @@ fn benchmark_frame_with_parent_clone() {
         func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
     };
     let child_frame = Frame {
-        env: child_env,
+        env: Rc::new(child_env),
         continuation: child_continuation,
         parent: Some(Rc::new(parent_frame)),
     };
