@@ -32,7 +32,7 @@ pub fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: 
     
     EvaluateResult::Continue(EvalState {
         frame: function_frame,
-        expr: operator.clone(),
+        expr: Rc::new(operator.clone()),
         tail_context: TailContext::NonTailPosition, // 函数求值不在尾位置
         binding_name: None,
     })
@@ -92,7 +92,7 @@ fn evaluate_arguments(
             
             EvaluateResult::Continue(EvalState {
                 frame: arg_frame,
-                expr: car.as_ref().clone(),
+                expr: Rc::new(car.as_ref().clone()),
                 tail_context: TailContext::NonTailPosition, // 参数求值不在尾位置
                 binding_name: None,
             })

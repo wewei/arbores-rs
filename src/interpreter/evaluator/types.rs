@@ -113,7 +113,8 @@ pub struct EvalState {
     /// 当前调用栈 Frame
     pub frame: Frame,
     /// 待求值表达式
-    pub expr: SExpr,
+    /// 使用 Rc 包装以支持共享，减少克隆开销
+    pub expr: Rc<SExpr>,
     /// 尾调用上下文信息（用于尾调用优化）
     pub tail_context: TailContext,
     /// 当前表达式的绑定名称（如果有的话）
@@ -363,7 +364,7 @@ impl EvalState {
     ) -> Self {
         Self {
             frame,
-            expr,
+            expr: Rc::new(expr),
             tail_context,
             binding_name,
         }
