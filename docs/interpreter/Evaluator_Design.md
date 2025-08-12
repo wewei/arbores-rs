@@ -262,7 +262,123 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
    - Arbores API（如 arb:create、arb:search）作为内置函数通过函数调用机制处理
 
 ### 问题：如何单步迭代函数调用？
-TODO
+
+函数调用的单步迭代需要处理参数求值和函数应用两个阶段：
+
+1. **函数调用的求值顺序**：
+   - 先求值函数表达式（operator）
+   - 依次求值各个参数表达式（operands）
+   - 最后应用函数到参数
+
+2. **状态转移设计**：
+   ```rust
+   fn evaluate_function_call(state: EvalState, operator: &SExpr, operands: &SExpr) -> EvaluateResult {
+       // 阶段1：求值函数表达式
+       let new_continuation = Box::new(move |function_value| {
+           // 当函数求值完成后，开始求值参数
+           evaluate_arguments(state.frame, function_value, operands, Vec::new())
+       });
+       
+       let new_frame = Frame {
+           env: state.frame.env.clone(),
+           continuation: new_continuation,
+           parent: Some(Box::new(state.frame)),
+       };
+       
+       EvaluateResult::Continue(EvalState {
+           frame: new_frame,
+           expr: operator.clone(),
+       })
+   }
+   ```
+
+3. **参数求值的递归处理**：
+   ```rust
+   fn evaluate_arguments(
+       parent_frame: Frame, 
+       function_value: SExpr, 
+       remaining_args: &SExpr, 
+       evaluated_args: Vec<SExpr>
+   ) -> EvaluateResult {
+       match remaining_args {
+           // 没有更多参数，开始函数应用
+           SExprContent::Nil => {
+               apply_function(parent_frame, function_value, evaluated_args)
+           },
+           
+           // 还有参数需要求值
+           SExprContent::Cons { car, cdr } => {
+               let new_continuation = Box::new(move |arg_value| {
+                   // 参数求值完成，继续求值下一个参数
+                   let mut new_evaluated_args = evaluated_args.clone();
+                   new_evaluated_args.push(arg_value);
+                   evaluate_arguments(parent_frame, function_value, cdr, new_evaluated_args)
+               });
+               
+               let new_frame = Frame {
+                   env: parent_frame.env.clone(),
+                   continuation: new_continuation,
+                   parent: Some(Box::new(parent_frame)),
+               };
+               
+               EvaluateResult::Continue(EvalState {
+                   frame: new_frame,
+                   expr: car.clone(),
+               })
+           },
+           
+           _ => EvaluateResult::Error(EvaluateError::InvalidArgumentList),
+       }
+   }
+   ```
+
+4. **函数应用阶段**：
+   ```rust
+   fn apply_function(
+       parent_frame: Frame, 
+       function_value: SExpr, 
+       arguments: Vec<SExpr>
+   ) -> EvaluateResult {
+       match &function_value.content {
+           // 内置函数
+           SExprContent::Atom(Value::BuiltinFunction(func)) => {
+               match func.call(&arguments) {
+                   Ok(result) => (parent_frame.continuation)(result),
+                   Err(error) => EvaluateResult::Error(error),
+               }
+           },
+           
+           // 用户定义的 lambda 函数
+           SExprContent::Lambda { params, body, closure_env } => {
+               // 创建新环境，绑定参数
+               let new_env = bind_parameters(params, &arguments, closure_env)?;
+               
+               let new_frame = Frame {
+                   env: new_env,
+                   continuation: parent_frame.continuation,
+                   parent: parent_frame.parent,
+               };
+               
+               EvaluateResult::Continue(EvalState {
+                   frame: new_frame,
+                   expr: body.clone(),
+               })
+           },
+           
+           _ => EvaluateResult::Error(EvaluateError::NotCallable),
+       }
+   }
+   ```
+
+5. **设计优势**：
+   - **严格求值顺序**：函数和参数按标准 Scheme 语义求值
+   - **链式 continuation**：通过嵌套的 continuation 实现状态转移
+   - **尾递归支持**：lambda 函数调用重用当前栈帧的 continuation
+   - **统一处理**：内置函数和用户函数使用统一的应用机制
+
+6. **尾递归优化关键**：
+   - lambda 函数的函数体求值时，直接使用父栈帧的 continuation
+   - 避免创建新的栈帧链，实现真正的尾调用消除
 
 ### 问题：如何单步迭代 quote 特殊形式？
 TODO
