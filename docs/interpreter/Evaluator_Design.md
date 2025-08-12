@@ -190,7 +190,78 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
 - **尾递归友好**：状态转移不会增加调用栈深度
 
 ### 问题：单步迭代时，如何判定函数调用和特殊形式？
-TODO
+
+在 `evaluate_step` 中，需要根据当前表达式的类型进行分发处理：
+
+1. **表达式类型分析**：
+   - **自求值表达式**：数字、字符串、布尔值等，直接调用 continuation
+   - **符号**：变量引用，在环境中查找值
+   - **列表**：可能是函数调用或特殊形式，需要进一步判断
+
+2. **列表表达式的判定逻辑**：
+   ```rust
+   fn evaluate_step(state: EvalState) -> EvaluateResult {
+       match &state.expr.content {
+           // 自求值表达式
+           SExprContent::Atom(Value::Number(_)) | 
+           SExprContent::Atom(Value::String(_)) | 
+           SExprContent::Atom(Value::Bool(_)) => {
+               // 直接调用当前 frame 的 continuation
+               (state.frame.continuation)(state.expr)
+           },
+           
+           // 符号（变量引用）
+           SExprContent::Atom(Value::Symbol(name)) => {
+               match lookup_variable(name, &state.frame.env) {
+                   Some(value) => (state.frame.continuation)(value),
+                   None => EvaluateResult::Error(EvaluateError::UndefinedVariable(name.clone())),
+               }
+           },
+           
+           // 列表表达式
+           SExprContent::Cons { car, cdr } => {
+               evaluate_list_expression(state, car, cdr)
+           },
+           
+           // 其他情况
+           _ => EvaluateResult::Error(EvaluateError::InvalidExpression),
+       }
+   }
+   ```
+
+3. **特殊形式判定**：
+   ```rust
+   fn evaluate_list_expression(state: EvalState, car: &SExpr, cdr: &SExpr) -> EvaluateResult {
+       // 检查第一个元素是否为特殊形式关键字
+       if let SExprContent::Atom(Value::Symbol(operator)) = &car.content {
+           match operator.as_str() {
+               "quote" => evaluate_quote_special_form(state, cdr),
+               "if" => evaluate_if_special_form(state, cdr),
+               "lambda" => evaluate_lambda_special_form(state, cdr),
+               "define" => evaluate_define_special_form(state, cdr),
+               "let" => evaluate_let_special_form(state, cdr),
+               // Arbores 特有的特殊形式
+               "arb:create" | "arb:search" => evaluate_arbores_special_form(state, operator, cdr),
+               // 不是特殊形式，按函数调用处理
+               _ => evaluate_function_call(state, car, cdr),
+           }
+       } else {
+           // 第一个元素不是符号，按函数调用处理（可能是 lambda 表达式）
+           evaluate_function_call(state, car, cdr)
+       }
+   }
+   ```
+
+4. **设计优势**：
+   - **清晰分发**：通过模式匹配明确处理不同表达式类型
+   - **可扩展性**：新增特殊形式只需在 match 分支中添加
+   - **错误处理**：未知表达式类型有明确的错误处理
+   - **统一接口**：所有处理函数都返回 EvaluateResult
+
+5. **特殊形式优先级**：
+   - 特殊形式的判定优先于函数调用
+   - 使用字符串匹配确保精确识别
+   - 支持 Arbores 特有的特殊形式扩展
 
 ### 问题：如何单步迭代函数调用？
 TODO
