@@ -329,4 +329,86 @@ fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: &SEx
 
 这两次优化总共将主要瓶颈操作的性能提升了 10-14 倍，同时减少了 26-71% 的内存占用。
 
+## 当前克隆操作分析
+
+### 主要克隆操作统计
+
+基于代码分析，当前主要的克隆操作包括：
+
+#### 1. SExpr 克隆（109ns 每克隆）
+**位置和频率**：
+- `function_call.rs:24` - `operands.clone()` - 函数调用时
+- `function_call.rs:34` - `operator.clone()` - 函数调用时  
+- `function_call.rs:82` - `cdr.as_ref().clone()` - 参数求值时
+- `function_call.rs:94` - `car.as_ref().clone()` - 参数求值时
+- `function_call.rs:123` - `remaining_args.clone()` - 参数求值时
+
+**影响**：SExpr 克隆在函数调用过程中频繁发生，特别是参数求值链中
+
+#### 2. RuntimeValue 克隆（74ns 每克隆）
+**位置和频率**：
+- `engine.rs:55` - `RuntimeValue::String(s.clone())` - 字符串求值时
+- `engine.rs:67` - `value.clone()` - 变量查找时
+- `engine.rs:138` - `value.clone()` - 变量查找时
+- `types.rs:305` - `value.clone()` - 环境查找时
+- `function_call.rs:117` - `evaluated_args.clone()` - 参数求值时
+- `function_call.rs:122` - `function_value.clone()` - 参数求值时
+
+**影响**：RuntimeValue 克隆在变量查找和参数传递中频繁发生
+
+#### 3. Frame 克隆（112ns 每克隆，带父帧 46ns 每克隆）
+**位置和频率**：
+- `function_call.rs:27` - `state.as_ref().frame.env.clone()` - 创建新栈帧时
+- `function_call.rs:29` - `Rc::new(state.as_ref().frame.clone())` - 创建父栈帧时
+- `function_call.rs:87` - `state.as_ref().frame.env.clone()` - 创建参数栈帧时
+- `function_call.rs:89` - `Rc::new(state.as_ref().frame.clone())` - 创建参数父栈帧时
+
+**影响**：Frame 克隆在函数调用和参数求值时发生，但由于 Environment 已经优化，克隆开销相对较小
+
+#### 4. Rc<EvalState> 克隆（66ns 每克隆）
+**位置和频率**：
+- `function_call.rs:24` - `state.clone()` - 创建函数求值 continuation 时
+- `function_call.rs:49` - `original_state.clone()` - 函数求值 continuation 中
+- `function_call.rs:80` - `state.clone()` - 创建参数求值 continuation 时
+- `function_call.rs:121` - `state.clone()` - 参数求值 continuation 中
+
+**影响**：虽然已经优化，但在 continuation 链中仍然频繁克隆
+
+### 性能瓶颈排序
+
+根据克隆时间和频率，当前的主要瓶颈是：
+
+1. **SExpr 克隆**（109ns）- 函数调用中最频繁
+2. **Frame 克隆**（112ns）- 栈帧创建时
+3. **RuntimeValue 克隆**（74ns）- 变量查找和参数传递中频繁
+4. **Rc<EvalState> 克隆**（66ns）- 已经优化，但仍可进一步改进
+
+### 优化建议
+
+#### 高优先级优化
+1. **SExpr 优化**：将 `SExpr.content` 改为 `Rc<SExprContent>`
+   - 预期收益：减少 70-80% 的 SExpr 克隆开销
+   - 实施难度：高，需要修改所有 SExpr 操作
+
+2. **Frame 优化**：将 `Frame.env` 改为 `Rc<Environment>`
+   - 预期收益：减少 Frame 克隆开销（从 112ns 降到约 20-30ns）
+   - 实施难度：中等，需要修改栈帧创建逻辑
+
+#### 中等优先级优化
+3. **RuntimeValue 优化**：将大值类型改为 `Rc` 包装
+   - 预期收益：减少 RuntimeValue 克隆开销
+   - 实施难度：中等，需要修改值传递逻辑
+
+4. **进一步减少 Rc<EvalState> 克隆**：在 continuation 中使用弱引用
+   - 预期收益：减少内存占用和克隆开销
+   - 实施难度：高，需要重新设计 continuation 机制
+
+### 下一步优化计划
+
+建议按以下顺序进行优化：
+1. **Frame 优化**（影响最大，实施相对简单）
+2. **SExpr 优化**（影响大，但实施复杂）
+3. **RuntimeValue 优化**（影响中等，实施中等）
+4. **Continuation 优化**（影响中等，实施复杂）
+
 这个优化方案已经显著提升了求值器性能，特别是在函数调用和环境操作频繁的场景下。

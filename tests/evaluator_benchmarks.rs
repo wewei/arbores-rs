@@ -122,6 +122,43 @@ fn benchmark_frame_clone() {
 }
 
 #[test]
+fn benchmark_frame_with_parent_clone() {
+    let parent_env = Environment::new();
+    let parent_continuation = Continuation {
+        func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
+    };
+    let parent_frame = Frame {
+        env: parent_env,
+        continuation: parent_continuation,
+        parent: None,
+    };
+    
+    let child_env = Environment::new();
+    let child_continuation = Continuation {
+        func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
+    };
+    let child_frame = Frame {
+        env: child_env,
+        continuation: child_continuation,
+        parent: Some(Rc::new(parent_frame)),
+    };
+    
+    let iterations = 100_000;
+    let start = Instant::now();
+    
+    for _ in 0..iterations {
+        let _cloned_frame = child_frame.clone();
+    }
+    
+    let duration = start.elapsed();
+    println!("Frame with parent clone benchmark:");
+    println!("  Iterations: {}", iterations);
+    println!("  Total time: {:?}", duration);
+    println!("  Average time per clone: {:?}", duration / iterations);
+    println!("  Clones per second: {:.0}", iterations as f64 / duration.as_secs_f64());
+}
+
+#[test]
 fn benchmark_runtime_value_clone() {
     let values = vec![
         RuntimeValue::Number(42.0),
