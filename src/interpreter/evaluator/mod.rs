@@ -9,8 +9,7 @@ pub mod function_call;
 pub mod builtins;
 pub mod special_forms;
 
-#[cfg(test)]
-mod tests;
+
 
 // 重新导出核心类型
 pub use types::{

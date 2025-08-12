@@ -10,7 +10,7 @@ use super::super::types::*;
 /// 
 /// 语法：(quote expr) 或简写为 'expr
 /// 返回 expr 的字面值，不进行求值
-pub fn evaluate_quote(state: EvalState, args: &SExpr) -> EvaluateResult {
+pub fn evaluate_quote(state: Rc<EvalState>, args: &SExpr) -> EvaluateResult {
     // quote 只接受一个参数
     match &args.content {
         SExprContent::Cons { car, cdr } => {
@@ -19,12 +19,12 @@ pub fn evaluate_quote(state: EvalState, args: &SExpr) -> EvaluateResult {
                 SExprContent::Nil => {
                     // 将被引用的表达式转换为运行时值并返回
                     let quoted_value = s_expr_to_runtime_value(car);
-                    (state.frame.continuation.func)(quoted_value)
+                    (state.as_ref().frame.continuation.func)(quoted_value)
                 },
                 _ => {
                     // quote 接受多个参数是错误的
                     EvaluateResult::Error(EvaluateError::InvalidQuoteSyntax {
-                        span: state.expr.span.clone(),
+                        span: state.as_ref().expr.span.clone(),
                         message: "quote expects exactly one argument".to_string(),
                     })
                 }
@@ -33,14 +33,14 @@ pub fn evaluate_quote(state: EvalState, args: &SExpr) -> EvaluateResult {
         SExprContent::Nil => {
             // quote 没有参数是错误的
             EvaluateResult::Error(EvaluateError::InvalidQuoteSyntax {
-                span: state.expr.span.clone(),
+                span: state.as_ref().expr.span.clone(),
                 message: "quote expects exactly one argument".to_string(),
             })
         },
         _ => {
             // 参数列表格式错误
             EvaluateResult::Error(EvaluateError::InvalidArgumentList {
-                span: state.expr.span.clone(),
+                span: state.as_ref().expr.span.clone(),
                 message: "quote argument must be a list".to_string(),
             })
         }

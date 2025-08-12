@@ -20,14 +20,14 @@ use std::rc::Rc;
 /// 
 /// # 返回
 /// 求值结果
-pub fn evaluate_function_call(state: EvalState, operator: &SExpr, operands: &SExpr) -> EvaluateResult {
+pub fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: &SExpr) -> EvaluateResult {
     // 第一阶段：求值函数表达式
     let function_continuation = create_function_eval_continuation(state.clone(), operands.clone());
     
     let function_frame = Frame {
-        env: state.frame.env.clone(),
+        env: state.as_ref().frame.env.clone(),
         continuation: function_continuation,
-        parent: Some(Rc::new(state.frame)),
+        parent: Some(Rc::new(state.as_ref().frame.clone())),
     };
     
     EvaluateResult::Continue(EvalState {
@@ -40,7 +40,7 @@ pub fn evaluate_function_call(state: EvalState, operator: &SExpr, operands: &SEx
 
 /// 创建函数求值完成后的 continuation
 fn create_function_eval_continuation(
-    original_state: EvalState,
+    original_state: Rc<EvalState>,
     operands: SExpr,
 ) -> Continuation {
     Continuation {
@@ -64,7 +64,7 @@ fn create_function_eval_continuation(
 /// - `remaining_args`: 剩余未求值的参数
 /// - `evaluated_args`: 已求值的参数
 fn evaluate_arguments(
-    state: EvalState,
+    state: Rc<EvalState>,
     function_value: RuntimeValue,
     remaining_args: SExpr,
     evaluated_args: Vec<RuntimeValue>,
@@ -85,9 +85,9 @@ fn evaluate_arguments(
             );
             
             let arg_frame = Frame {
-                env: state.frame.env.clone(),
+                env: state.as_ref().frame.env.clone(),
                 continuation: arg_continuation,
-                parent: Some(Rc::new(state.frame.clone())),
+                parent: Some(Rc::new(state.as_ref().frame.clone())),
             };
             
             EvaluateResult::Continue(EvalState {
@@ -107,7 +107,7 @@ fn evaluate_arguments(
 
 /// 创建参数求值完成后的 continuation
 fn create_argument_eval_continuation(
-    state: EvalState,
+    state: Rc<EvalState>,
     function_value: RuntimeValue,
     remaining_args: SExpr,
     mut evaluated_args: Vec<RuntimeValue>,
@@ -135,7 +135,7 @@ fn create_argument_eval_continuation(
 /// - `function_value`: 要应用的函数
 /// - `arguments`: 求值后的参数列表
 fn apply_function(
-    state: EvalState,
+    state: Rc<EvalState>,
     function_value: RuntimeValue,
     arguments: Vec<RuntimeValue>,
 ) -> EvaluateResult {
@@ -145,7 +145,7 @@ fn apply_function(
             // 检查参数个数
             if !arity.matches(arguments.len()) {
                 return EvaluateResult::Error(EvaluateError::ArgumentCountMismatch {
-                    span: state.expr.span.clone(),
+                    span: state.as_ref().expr.span.clone(),
                     expected: format!("{:?}", arity),
                     actual: arguments.len(),
                 });
@@ -153,7 +153,7 @@ fn apply_function(
             
             // 调用内置函数
             match (implementation.func)(&arguments) {
-                Ok(result) => (state.frame.continuation.func)(result),
+                Ok(result) => (state.as_ref().frame.continuation.func)(result),
                 Err(error) => EvaluateResult::Error(error),
             }
         },
@@ -161,13 +161,13 @@ fn apply_function(
         // 用户定义的 Lambda 函数（暂时不实现）
         RuntimeValue::Lambda { .. } => {
             EvaluateResult::Error(EvaluateError::NotImplemented {
-                span: state.expr.span.clone(),
+                span: state.as_ref().expr.span.clone(),
                 feature: "Lambda function calls".to_string(),
             })
         },
         
         _ => EvaluateResult::Error(EvaluateError::NotCallable {
-            span: state.expr.span.clone(),
+            span: state.as_ref().expr.span.clone(),
             value: format!("{:?}", function_value),
         }),
     }

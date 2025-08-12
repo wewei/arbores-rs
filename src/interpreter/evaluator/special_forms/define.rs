@@ -2,6 +2,7 @@
 //! 
 //! define 用于在当前环境中定义变量或函数，支持简单变量定义和函数定义的语法糖。
 
+use std::rc::Rc;
 use crate::interpreter::{SExpr, SExprContent, Value};
 use super::super::types::*;
 
@@ -9,7 +10,7 @@ use super::super::types::*;
 /// 
 /// 语法：(define name value) - 变量定义
 /// 语法：(define (name param1 param2 ...) body) - 函数定义语法糖
-pub fn evaluate_define(state: EvalState, args: &SExpr) -> EvaluateResult {
+pub fn evaluate_define(state: Rc<EvalState>, args: &SExpr) -> EvaluateResult {
     // TODO: 实现 define 特殊形式
     EvaluateResult::Error(EvaluateError::InvalidDefineSyntax {
         span: state.expr.span.clone(),

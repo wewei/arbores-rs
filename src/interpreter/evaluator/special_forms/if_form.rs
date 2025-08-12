@@ -2,6 +2,7 @@
 //! 
 //! if 实现条件分支逻辑，需要先求值条件表达式，然后根据结果选择不同的分支进行求值。
 
+use std::rc::Rc;
 use crate::interpreter::{SExpr, SExprContent, Value};
 use super::super::types::*;
 
@@ -9,7 +10,7 @@ use super::super::types::*;
 /// 
 /// 语法：(if condition then-expr else-expr)
 /// 语法：(if condition then-expr) - else 分支可选
-pub fn evaluate_if(state: EvalState, args: &SExpr) -> EvaluateResult {
+pub fn evaluate_if(state: Rc<EvalState>, args: &SExpr) -> EvaluateResult {
     // TODO: 实现 if 特殊形式
     EvaluateResult::Error(EvaluateError::InvalidIfSyntax {
         span: state.expr.span.clone(),
