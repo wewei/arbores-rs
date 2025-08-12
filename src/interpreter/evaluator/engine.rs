@@ -135,7 +135,7 @@ fn evaluate_list_expression(state: Rc<EvalState>, car: &SExpr, cdr: &SExpr) -> E
 /// 在环境中查找变量
 fn lookup_variable(name: &str, env: &Environment) -> Option<RuntimeValue> {
     // 在当前环境中查找
-    if let Some(value) = env.bindings.get(name) {
+    if let Some(value) = env.bindings.as_ref().get(name) {
         return Some(value.clone());
     }
     

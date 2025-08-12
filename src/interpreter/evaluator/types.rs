@@ -87,7 +87,8 @@ impl PartialEq for BuiltinImpl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment {
     /// 当前环境的变量绑定表 (变量名 -> 运行时值)
-    pub bindings: HashMap<String, RuntimeValue>,
+    /// 使用 Rc 包装以支持共享，减少克隆开销
+    pub bindings: Rc<HashMap<String, RuntimeValue>>,
     /// 上级环境（链式结构）
     pub parent: Option<Rc<Environment>>,
 }
@@ -280,7 +281,7 @@ impl Environment {
     /// 创建新的空环境
     pub fn new() -> Self {
         Self {
-            bindings: HashMap::new(),
+            bindings: Rc::new(HashMap::new()),
             parent: None,
         }
     }
@@ -288,20 +289,20 @@ impl Environment {
     /// 创建带父环境的新环境
     pub fn with_parent(parent: Environment) -> Self {
         Self {
-            bindings: HashMap::new(),
+            bindings: Rc::new(HashMap::new()),
             parent: Some(Rc::new(parent)),
         }
     }
     
     /// 在当前环境中定义变量
     pub fn define(&mut self, name: String, value: RuntimeValue) {
-        self.bindings.insert(name, value);
+        Rc::make_mut(&mut self.bindings).insert(name, value);
     }
     
     /// 查找变量值（递归向上查找）
     pub fn lookup(&self, name: &str) -> Option<RuntimeValue> {
         // 先在当前环境查找
-        if let Some(value) = self.bindings.get(name) {
+        if let Some(value) = self.bindings.as_ref().get(name) {
             return Some(value.clone());
         }
         
