@@ -38,6 +38,9 @@ pub struct EvalState {
     expr: SExpr,
     /// 尾调用上下文信息（用于尾调用优化）
     tail_context: TailContext,
+    /// 当前表达式的绑定名称（如果有的话）
+    /// 用于支持递归函数定义和调试信息
+    binding_name: Option<String>,
 }
 
 /// 尾调用上下文 - 标记当前表达式是否在尾位置
@@ -174,6 +177,7 @@ fn init_eval_state(expr: SExpr, env: Environment) -> EvalState {
         frame: root_frame,
         expr,
         tail_context: TailContext::TailPosition, // 顶层表达式在尾位置
+        binding_name: None, // 顶层表达式没有绑定名称
     }
 }
 ```
@@ -321,6 +325,8 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
        EvaluateResult::Continue(EvalState {
            frame: new_frame,
            expr: operator.clone(),
+           tail_context: TailContext::NonTailPosition, // 函数求值不在尾位置
+           binding_name: None, // 函数求值不绑定到特定名称
        })
    }
    ```
@@ -358,6 +364,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
                    frame: new_frame,
                    expr: car.clone(),
                    tail_context: TailContext::NonTailPosition,
+                   binding_name: None, // 参数求值不绑定到特定名称
                })
            },
            
@@ -397,6 +404,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
                    frame: new_frame,
                    expr: body.clone(),
                    tail_context: TailContext::TailPosition, // 函数体在尾位置
+                   binding_name: None, // 函数体求值不绑定到特定名称
                })
            },
            
@@ -517,6 +525,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
                            expr: then_expr.clone(),
                            frame: state.frame.clone(), // 使用原始 frame
                            tail_context: state.tail_context.clone(), // 继承尾位置状态
+                           binding_name: state.binding_name.clone(), // 继承绑定名称
                        })
                    } else {
                        // 条件为假，求值 else 分支（如果存在）
@@ -546,6 +555,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
                    expr: condition,
                    frame: condition_frame,
                    tail_context: TailContext::NonTailPosition, // 条件不在尾位置
+                   binding_name: None, // 条件求值不绑定到特定名称
                })
            },
            _ => EvaluateResult::Error(EvaluateError::InvalidIfSyntax),
@@ -620,7 +630,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
                    parameters: param_names,
                    body: body.clone(),
                    captured_env: state.frame.env.clone(), // 捕获当前环境
-                   name: None,
+                   name: state.binding_name.clone(), // 使用绑定名称（如果有的话）
                };
                
                // 直接返回闭包，无需状态转移
@@ -699,13 +709,15 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
            let closure_frame = Frame {
                env: new_env,
                continuation: current_frame.continuation,
-               parent: Some(Box::new(current_frame)),
+               parent: current_frame.parent,
            };
            
            // 求值函数体
            EvaluateResult::Continue(EvalState {
                expr: body.clone(),
                frame: closure_frame,
+               tail_context: TailContext::TailPosition, // 函数体在尾位置
+               binding_name: None, // 函数体求值不绑定到特定名称
            })
        } else {
            EvaluateResult::Error(EvaluateError::NotCallable)
@@ -783,12 +795,12 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
 
    fn evaluate_variable_define(state: EvalState, name: String, value_expr: SExpr) -> EvaluateResult {
        // 创建 continuation 来处理值求值完成后的定义
-       let define_continuation = Box::new(move |evaluated_value: SExpr| -> EvaluateResult {
+       let define_continuation = Box::new(move |evaluated_value: RuntimeValue| -> EvaluateResult {
            // 在当前环境中定义变量
            state.frame.env.define(name.clone(), evaluated_value.clone());
            
-           // define 返回未定义值或被定义的值（实现可以选择）
-           (state.frame.continuation)(evaluated_value)
+           // define 返回未定义值
+           (state.frame.continuation)(RuntimeValue::Unspecified)
        });
        
        // 创建新的 Frame 来求值表达式
@@ -798,10 +810,12 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
            parent: Some(Box::new(state.frame)),
        };
        
-       // 开始求值 value 表达式
+       // 开始求值 value 表达式，传递绑定名称
        EvaluateResult::Continue(EvalState {
            expr: value_expr,
            frame: eval_frame,
+           tail_context: TailContext::TailPosition, // define 的值在尾位置
+           binding_name: Some(name), // 传递绑定名称
        })
    }
 
@@ -1012,6 +1026,8 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
            EvaluateResult::Continue(EvalState {
                expr: body,
                frame: let_frame,
+               tail_context: TailContext::TailPosition, // let 的 body 在尾位置
+               binding_name: None, // body 求值不绑定到特定名称
            })
        } else {
            // 求值当前绑定的值表达式
@@ -1040,6 +1056,8 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
            EvaluateResult::Continue(EvalState {
                expr: current_binding.value_expr.clone(),
                frame: eval_frame,
+               tail_context: TailContext::TailPosition, // let 绑定的值在尾位置
+               binding_name: Some(current_binding.name.clone()), // 传递绑定名称
            })
        }
    }
@@ -1202,6 +1220,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
            expr: condition,
            frame: condition_frame,
            tail_context: TailContext::NonTailPosition, // 条件不在尾位置
+           binding_name: None, // 条件求值不绑定到特定名称
        })
    }
    ```
