@@ -240,9 +240,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
                "lambda" => evaluate_lambda_special_form(state, cdr),
                "define" => evaluate_define_special_form(state, cdr),
                "let" => evaluate_let_special_form(state, cdr),
-               // Arbores 特有的特殊形式
-               "arb:create" | "arb:search" => evaluate_arbores_special_form(state, operator, cdr),
-               // 不是特殊形式，按函数调用处理
+               // 不是特殊形式，按函数调用处理（包括 arb:create、arb:search 等内置函数）
                _ => evaluate_function_call(state, car, cdr),
            }
        } else {
@@ -261,7 +259,7 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<SExpr, EvaluateError> {
 5. **特殊形式优先级**：
    - 特殊形式的判定优先于函数调用
    - 使用字符串匹配确保精确识别
-   - 支持 Arbores 特有的特殊形式扩展
+   - Arbores API（如 arb:create、arb:search）作为内置函数通过函数调用机制处理
 
 ### 问题：如何单步迭代函数调用？
 TODO
