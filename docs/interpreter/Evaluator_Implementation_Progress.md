@@ -142,6 +142,14 @@
   - set! 操作（修改已存在变量）
   - 作用域管理
 
+### 2.4 性能优化进展
+- **✅ EvalState Clone 移除**: 已完成，所有函数使用 `Rc<EvalState>`
+- **✅ Environment Clone 移除**: 已完成，使用 `Rc<HashMap>` 和手动 `PartialEq`
+- **✅ Lambda 类型重构**: 已完成，创建专门的 `Lambda` 结构体，`parameters` 和 `body` 都使用 `Rc` 包装
+- **✅ Frame Clone 移除**: 已完成，`EvalState.frame` 改为 `Rc<Frame>`，移除 `Frame` 的 `Clone` 派生，基准测试已清理
+- **🔄 SExpr Clone 移除**: 待实施
+- **✅ EvaluateResult Clone 移除**: 已完成，`EvaluateResult` 本身就没有 `Clone` 派生，已经是正确的设计
+
 ## 第三轮实现计划
 
 ### 3.1 错误处理优化

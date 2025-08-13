@@ -25,13 +25,13 @@ pub fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: 
     let function_continuation = create_function_eval_continuation(state.clone(), operands.clone());
     
     let function_frame = Frame {
-        env: state.as_ref().frame.env.clone(),
+        env: state.as_ref().frame.as_ref().env.clone(),
         continuation: function_continuation,
-        parent: Some(Rc::new(state.as_ref().frame.clone())),
+        parent: Some(state.as_ref().frame.clone()),
     };
     
     EvaluateResult::Continue(Rc::new(EvalState {
-        frame: function_frame,
+        frame: Rc::new(function_frame),
         expr: Rc::new(operator.clone()),
         tail_context: TailContext::NonTailPosition, // 函数求值不在尾位置
         binding_name: None,
@@ -85,13 +85,13 @@ fn evaluate_arguments(
             );
             
             let arg_frame = Frame {
-                env: state.as_ref().frame.env.clone(),
+                env: state.as_ref().frame.as_ref().env.clone(),
                 continuation: arg_continuation,
-                parent: Some(Rc::new(state.as_ref().frame.clone())),
+                parent: Some(state.as_ref().frame.clone()),
             };
             
             EvaluateResult::Continue(Rc::new(EvalState {
-                frame: arg_frame,
+                frame: Rc::new(arg_frame),
                 expr: Rc::new(car.as_ref().clone()),
                 tail_context: TailContext::NonTailPosition, // 参数求值不在尾位置
                 binding_name: None,

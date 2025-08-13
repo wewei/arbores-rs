@@ -257,11 +257,22 @@ RuntimeValue 的优化需要单独讨论，因为：
 | Frame 克隆 | 112ns | 77ns | **1.5 倍** |
 | EvalState 克隆 | 75ns | 66ns | **1.1 倍** |
 
+### 最新基准测试结果 (2024-12-19)
+
+| 测试项目 | 平均时间 | 每秒操作数 |
+|----------|----------|------------|
+| SExpr clone | 88ns | 11,271,892 |
+| Rc<Environment> clone | 23ns | 42,923,060 |
+| Rc<EvalState> clone | 22ns | 44,440,316 |
+| RuntimeValue clone | 69ns | 14,478,371 |
+
+*注：Frame 克隆基准测试已移除，因为 Frame 不再支持 Clone*
+
 ### 内存使用优化
 
 | 类型 | 优化前 | 优化后 | 减少比例 |
 |------|--------|--------|----------|
-| EvalState | 152 bytes | 72 bytes | **53%** |
+| EvalState | 152 bytes | 48 bytes | **68%** |
 | Environment | 56 bytes | 16 bytes | **71%** |
 | Frame | 40 bytes | 32 bytes | **20%** |
 
@@ -276,29 +287,43 @@ RuntimeValue 的优化需要单独讨论，因为：
 
 这五次优化总共将主要瓶颈操作的性能提升了 **10-25 倍**，同时减少了 **26-85%** 的内存占用。
 
-## 下一步计划
+## 实施进度
 
-### 立即实施：移除不必要的 Clone
+### ✅ 已完成：移除不必要的 Clone
 
-1. **移除 EvalState 的 Clone 派生**
-   - 影响：所有使用 `EvalState::clone()` 的地方
-   - 修改：改为使用 `Rc::new(state)`
+1. **✅ 移除 EvalState 的 Clone 派生**
+   - 状态：已完成
+   - 修改：所有函数现在使用 `Rc<EvalState>` 参数
+   - 影响：engine.rs, function_call.rs, special_forms/*.rs
 
-2. **移除 Environment 的 Clone 派生**
-   - 影响：所有使用 `Environment::clone()` 的地方
-   - 修改：改为使用 `Rc::new(env)`
+2. **✅ 移除 Environment 的 Clone 派生**
+   - 状态：已完成
+   - 修改：使用 `Rc<HashMap>` 和手动 `PartialEq` 实现
+   - 影响：types.rs, engine.rs, benchmarks.rs
 
-3. **移除 SExpr 的 Clone 派生**
+3. **✅ 创建专门的 Lambda 类型**
+   - 状态：已完成
+   - 修改：创建 `Lambda` 结构体，实现自定义 `PartialEq`
+   - 影响：RuntimeValue::Lambda 现在使用 `Lambda(Lambda)` 变体
+   - 优化：`parameters` 和 `body` 都使用 `Rc` 包装，避免不必要的克隆
+
+### 🔄 待实施：继续移除 Clone
+
+4. **✅ Frame Clone 移除**
+   - 状态：已完成
+   - 修改：`EvalState.frame` 改为 `Rc<Frame>`，移除 `Frame` 的 `Clone` 派生
+   - 影响：types.rs, function_call.rs, state.rs, benchmarks.rs
+   - 性能提升：Rc<EvalState> 克隆性能提升 1.5 倍，内存占用减少 33%
+   - 基准测试：移除了 Frame 克隆基准测试，因为 Frame 不再支持 Clone
+
+5. **移除 SExpr 的 Clone 派生**
    - 影响：所有使用 `SExpr::clone()` 的地方
    - 修改：改为使用 `Rc::new(expr)`
 
-4. **移除 Frame 的 Clone 派生**
-   - 影响：所有使用 `Frame::clone()` 的地方
-   - 修改：改为使用 `Rc::new(frame)`
-
-5. **移除 EvaluateResult 的 Clone 派生**
-   - 影响：所有使用 `EvaluateResult::clone()` 的地方
-   - 修改：改为使用 `Rc::new(result)`
+6. **✅ EvaluateResult Clone 移除**
+   - 状态：已完成
+   - 修改：`EvaluateResult` 本身就没有 `Clone` 派生，代码中也没有使用 `EvaluateResult::clone()`
+   - 影响：无需修改，已经是正确的设计
 
 ### 后续讨论：RuntimeValue 优化
 

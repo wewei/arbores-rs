@@ -54,21 +54,22 @@ fn benchmark_eval_state_rc_clone() {
 }
 
 #[test]
-fn benchmark_environment_clone() {
+fn benchmark_environment_rc_clone() {
     let mut env = Environment::new();
     env.define("x".to_string(), RuntimeValue::Number(1.0));
     env.define("y".to_string(), RuntimeValue::Number(2.0));
     env.define("z".to_string(), RuntimeValue::Number(3.0));
     
+    let env_rc = Rc::new(env);
     let iterations = 100_000;
     let start = Instant::now();
     
     for _ in 0..iterations {
-        let _cloned_env = env.clone();
+        let _cloned_env = env_rc.clone();
     }
     
     let duration = start.elapsed();
-    println!("Environment clone benchmark:");
+    println!("Rc<Environment> clone benchmark:");
     println!("  Iterations: {}", iterations);
     println!("  Total time: {:?}", duration);
     println!("  Average time per clone: {:?}", duration / iterations);
@@ -94,69 +95,7 @@ fn benchmark_s_expr_clone() {
     println!("  Clones per second: {:.0}", iterations as f64 / duration.as_secs_f64());
 }
 
-#[test]
-fn benchmark_frame_clone() {
-    let env = Environment::new();
-    let continuation = Continuation {
-        func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
-    };
-    let frame = Frame {
-        env: Rc::new(env),
-        continuation,
-        parent: None,
-    };
-    
-    let iterations = 100_000;
-    let start = Instant::now();
-    
-    for _ in 0..iterations {
-        let _cloned_frame = frame.clone();
-    }
-    
-    let duration = start.elapsed();
-    println!("Frame clone benchmark:");
-    println!("  Iterations: {}", iterations);
-    println!("  Total time: {:?}", duration);
-    println!("  Average time per clone: {:?}", duration / iterations);
-    println!("  Clones per second: {:.0}", iterations as f64 / duration.as_secs_f64());
-}
 
-#[test]
-fn benchmark_frame_with_parent_clone() {
-    let parent_env = Environment::new();
-    let parent_continuation = Continuation {
-        func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
-    };
-    let parent_frame = Frame {
-        env: Rc::new(parent_env),
-        continuation: parent_continuation,
-        parent: None,
-    };
-    
-    let child_env = Environment::new();
-    let child_continuation = Continuation {
-        func: Rc::new(|_| EvaluateResult::Completed(RuntimeValue::Number(0.0))),
-    };
-    let child_frame = Frame {
-        env: Rc::new(child_env),
-        continuation: child_continuation,
-        parent: Some(Rc::new(parent_frame)),
-    };
-    
-    let iterations = 100_000;
-    let start = Instant::now();
-    
-    for _ in 0..iterations {
-        let _cloned_frame = child_frame.clone();
-    }
-    
-    let duration = start.elapsed();
-    println!("Frame with parent clone benchmark:");
-    println!("  Iterations: {}", iterations);
-    println!("  Total time: {:?}", duration);
-    println!("  Average time per clone: {:?}", duration / iterations);
-    println!("  Clones per second: {:.0}", iterations as f64 / duration.as_secs_f64());
-}
 
 #[test]
 fn benchmark_runtime_value_clone() {

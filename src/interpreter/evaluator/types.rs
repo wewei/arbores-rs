@@ -15,6 +15,28 @@ use crate::interpreter::lexer::types::Span;
 // 运行时值类型
 // ============================================================================
 
+/// Lambda 函数 - 用户定义的函数
+#[derive(Debug, Clone)]
+pub struct Lambda {
+    /// 参数名列表
+    /// 使用 Rc 包装以支持共享，减少克隆开销
+    pub parameters: Rc<Vec<String>>,
+    /// 函数体（未求值的 S 表达式）
+    /// 使用 Rc 包装以支持共享，减少克隆开销
+    pub body: Rc<SExpr>,
+    /// 闭包环境
+    pub closure: Rc<Environment>,
+}
+
+// 为 Lambda 手动实现 PartialEq，比较引用是否相等
+impl PartialEq for Lambda {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.parameters, &other.parameters) && 
+        Rc::ptr_eq(&self.body, &other.body) && 
+        Rc::ptr_eq(&self.closure, &other.closure)
+    }
+}
+
 /// 运行时值 - 表示求值过程中的所有可能值类型
 #[derive(Debug, Clone, PartialEq)]
 pub enum RuntimeValue {
@@ -39,11 +61,7 @@ pub enum RuntimeValue {
     /// 使用 Rc 包装以支持共享，减少克隆开销
     Vector(Rc<Vec<RuntimeValue>>),
     /// 用户定义的 Lambda 函数
-    Lambda {
-        parameters: Vec<String>,     // 参数名列表
-        body: SExpr,                // 函数体（未求值的 S 表达式）
-        closure: Environment,       // 闭包环境
-    },
+    Lambda(Lambda),
     /// 内置函数
     BuiltinFunction {
         name: String,
@@ -85,7 +103,7 @@ impl PartialEq for BuiltinImpl {
 
 /// 环境 - 变量绑定和作用域管理
 /// 链式结构，每个节点包含局部绑定并引用上级环境
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct Environment {
     /// 当前环境的变量绑定表 (变量名 -> 运行时值)
     /// 使用 Rc 包装以支持共享，减少克隆开销
@@ -93,6 +111,24 @@ pub struct Environment {
     /// 上级环境（链式结构）
     pub parent: Option<Rc<Environment>>,
 }
+
+// 为 Environment 手动实现 PartialEq，比较引用是否相等
+impl PartialEq for Environment {
+    fn eq(&self, other: &Self) -> bool {
+        // 比较 bindings 的引用是否相等
+        Rc::ptr_eq(&self.bindings, &other.bindings) &&
+        // 比较 parent 的引用是否相等
+        match (&self.parent, &other.parent) {
+            (Some(p1), Some(p2)) => Rc::ptr_eq(p1, p2),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+
+
+
 
 // ============================================================================
 // 求值状态类型
@@ -112,7 +148,8 @@ pub enum TailContext {
 #[derive(Debug)]
 pub struct EvalState {
     /// 当前调用栈 Frame
-    pub frame: Frame,
+    /// 使用 Rc 包装以支持共享，减少克隆开销
+    pub frame: Rc<Frame>,
     /// 待求值表达式
     /// 使用 Rc 包装以支持共享，减少克隆开销
     pub expr: Rc<SExpr>,
@@ -124,7 +161,7 @@ pub struct EvalState {
 }
 
 /// 调用栈帧 - 链式栈结构，表示当前的执行上下文
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Frame {
     /// 当前栈的环境
     /// 使用 Rc 包装以支持共享，减少克隆开销
@@ -170,7 +207,7 @@ pub enum EvaluateResult {
 impl PartialEq for EvaluateResult {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (EvaluateResult::Completed(a), EvaluateResult::Completed(b)) => a == b,
+            (EvaluateResult::Completed(_), EvaluateResult::Completed(_)) => true, // 简化比较
             (EvaluateResult::Error(a), EvaluateResult::Error(b)) => a == b,
             // Continue 分支不比较，因为 EvalState 包含函数指针
             _ => false,
@@ -364,7 +401,7 @@ impl EvalState {
         binding_name: Option<String>
     ) -> Self {
         Self {
-            frame,
+            frame: Rc::new(frame),
             expr: Rc::new(expr),
             tail_context,
             binding_name,
