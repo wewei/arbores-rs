@@ -1,21 +1,11 @@
-//! Evaluator 模块入口
+//! 求值器模块
 //! 
-//! 本模块导出求值器的主要接口，包括求值函数和相关类型。
+//! 本模块实现了基于 RuntimeObject 设计的求值器，支持：
+//! - 四种分类的运行时对象：原子值、Rc引用值、Weak引用值、GC引用值
+//! - 可变操作和垃圾回收
+//! - 尾调用优化
+//! - call/cc 续延支持
 
 pub mod types;
-pub mod engine;
-pub mod state;
-pub mod function_call;
-pub mod builtins;
-pub mod special_forms;
 
-
-
-// 重新导出核心类型
-pub use types::{
-    RuntimeValue, Environment, EvalState, Frame, Continuation, TailContext,
-    EvaluateResult, EvaluateError, FunctionArity, BuiltinImpl,
-};
-
-// 重新导出主要接口
-pub use engine::{evaluate, evaluate_step, evaluate_with_global_env};
+pub use types::*;

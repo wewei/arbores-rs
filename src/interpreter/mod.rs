@@ -14,6 +14,6 @@ pub use parser::{parse, parse_from_string, SExpr, SExprContent, Value, ParseErro
 
 // 重新导出求值器的主要接口
 pub use evaluator::{
-    evaluate, evaluate_with_global_env, RuntimeValue, Environment, 
+    RuntimeValue, Environment, 
     EvaluateError
 };
