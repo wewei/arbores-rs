@@ -19,7 +19,7 @@ use super::state::*;
 /// 
 /// 求值结果的运行时值或错误信息
 pub fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError> {
-    let mut current_state = init_eval_state(expr, env);
+    let mut current_state = Rc::new(init_eval_state(expr, env));
     
     loop {
         match evaluate_step(current_state) {
@@ -41,11 +41,10 @@ pub fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateE
 /// # 返回值
 /// 
 /// 三分枝结果：Completed(结果)、Continue(下一状态)、Error(错误)
-pub fn evaluate_step(state: EvalState) -> EvaluateResult {
-    // 先提取需要的信息，避免借用冲突
-    let expr_content = &state.expr.content;
-    let frame = &state.frame;
-    let expr_span = &state.expr.span;
+pub fn evaluate_step(state: Rc<EvalState>) -> EvaluateResult {
+    let expr_content = &state.as_ref().expr.content;
+    let frame = &state.as_ref().frame;
+    let expr_span = &state.as_ref().expr.span;
     
     match expr_content {
         // 自求值表达式（原子值）
@@ -77,7 +76,7 @@ pub fn evaluate_step(state: EvalState) -> EvaluateResult {
         SExprContent::Cons { car, cdr } => {
             let car_ref = car.as_ref();
             let cdr_ref = cdr.as_ref();
-            evaluate_list_expression(Rc::new(state.clone()), car_ref, cdr_ref)
+            evaluate_list_expression(state.clone(), car_ref, cdr_ref)
         },
         
         // 空列表
@@ -92,6 +91,8 @@ pub fn evaluate_step(state: EvalState) -> EvaluateResult {
         }),
     }
 }
+
+
 
 /// 求值列表表达式
 /// 

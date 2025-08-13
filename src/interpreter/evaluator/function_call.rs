@@ -30,12 +30,12 @@ pub fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: 
         parent: Some(Rc::new(state.as_ref().frame.clone())),
     };
     
-    EvaluateResult::Continue(EvalState {
+    EvaluateResult::Continue(Rc::new(EvalState {
         frame: function_frame,
         expr: Rc::new(operator.clone()),
         tail_context: TailContext::NonTailPosition, // 函数求值不在尾位置
         binding_name: None,
-    })
+    }))
 }
 
 /// 创建函数求值完成后的 continuation
@@ -90,12 +90,12 @@ fn evaluate_arguments(
                 parent: Some(Rc::new(state.as_ref().frame.clone())),
             };
             
-            EvaluateResult::Continue(EvalState {
+            EvaluateResult::Continue(Rc::new(EvalState {
                 frame: arg_frame,
                 expr: Rc::new(car.as_ref().clone()),
                 tail_context: TailContext::NonTailPosition, // 参数求值不在尾位置
                 binding_name: None,
-            })
+            }))
         },
         
         _ => EvaluateResult::Error(EvaluateError::InvalidArgumentList {

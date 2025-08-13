@@ -109,7 +109,7 @@ pub enum TailContext {
 
 /// 求值状态 - 表示求值过程中的当前状态
 /// 采用不可变设计，每次状态转移都产生新的状态
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct EvalState {
     /// 当前调用栈 Frame
     pub frame: Frame,
@@ -156,12 +156,12 @@ impl std::fmt::Debug for Continuation {
 // ============================================================================
 
 /// 求值步骤结果 - 表示单步求值的三种可能结果
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum EvaluateResult {
     /// 求值完成，返回最终结果（运行时值）
     Completed(RuntimeValue),
     /// 需要继续求值，返回下一个状态
-    Continue(EvalState),
+    Continue(Rc<EvalState>),
     /// 求值出错，返回错误信息
     Error(EvaluateError),
 }

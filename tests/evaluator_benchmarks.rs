@@ -33,10 +33,10 @@ fn create_nested_expr(depth: usize) -> SExpr {
 }
 
 #[test]
-fn benchmark_eval_state_clone() {
+fn benchmark_eval_state_rc_clone() {
     let env = Environment::new();
     let expr = create_simple_expr();
-    let state = init_eval_state(expr, env);
+    let state = Rc::new(init_eval_state(expr, env));
     
     let iterations = 100_000;
     let start = Instant::now();
@@ -46,7 +46,7 @@ fn benchmark_eval_state_clone() {
     }
     
     let duration = start.elapsed();
-    println!("EvalState clone benchmark:");
+    println!("Rc<EvalState> clone benchmark:");
     println!("  Iterations: {}", iterations);
     println!("  Total time: {:?}", duration);
     println!("  Average time per clone: {:?}", duration / iterations);
