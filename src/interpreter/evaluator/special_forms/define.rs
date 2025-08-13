@@ -10,7 +10,7 @@ use super::super::types::*;
 /// 
 /// 语法：(define name value) - 变量定义
 /// 语法：(define (name param1 param2 ...) body) - 函数定义语法糖
-pub fn evaluate_define(state: Rc<EvalState>, args: &SExpr) -> EvaluateResult {
+pub fn evaluate_define(state: Rc<EvalState>, args: Rc<SExpr>) -> EvaluateResult {
     // TODO: 实现 define 特殊形式
     EvaluateResult::Error(EvaluateError::InvalidDefineSyntax {
         span: state.expr.span.clone(),

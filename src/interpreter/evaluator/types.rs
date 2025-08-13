@@ -396,13 +396,13 @@ impl EvalState {
     /// 创建新的求值状态
     pub fn new(
         frame: Frame, 
-        expr: SExpr, 
+        expr: Rc<SExpr>, 
         tail_context: TailContext,
         binding_name: Option<String>
     ) -> Self {
         Self {
             frame: Rc::new(frame),
-            expr: Rc::new(expr),
+            expr,
             tail_context,
             binding_name,
         }

@@ -18,7 +18,7 @@ fn test_evaluate_numbers() {
         create_test_span(),
     );
     
-    let result = evaluate(expr, env).unwrap();
+    let result = evaluate(Rc::new(expr), env).unwrap();
     assert_eq!(result, RuntimeValue::Number(42.0));
 }
 
@@ -30,7 +30,7 @@ fn test_evaluate_strings() {
         create_test_span(),
     );
     
-    let result = evaluate(expr, env).unwrap();
+    let result = evaluate(Rc::new(expr), env).unwrap();
     assert_eq!(result, RuntimeValue::String("hello".to_string()));
 }
 
@@ -42,7 +42,7 @@ fn test_evaluate_booleans() {
         create_test_span(),
     );
     
-    let result = evaluate(expr, env).unwrap();
+    let result = evaluate(Rc::new(expr), env).unwrap();
     assert_eq!(result, RuntimeValue::Boolean(true));
 }
 
@@ -54,7 +54,7 @@ fn test_evaluate_nil() {
         create_test_span(),
     );
     
-    let result = evaluate(expr, env).unwrap();
+    let result = evaluate(Rc::new(expr), env).unwrap();
     assert_eq!(result, RuntimeValue::Nil);
 }
 
@@ -82,7 +82,7 @@ fn test_quote_special_form() {
         create_test_span(),
     );
     
-    let result = evaluate(quote_expr, env).unwrap();
+    let result = evaluate(Rc::new(quote_expr), env).unwrap();
     assert_eq!(result, RuntimeValue::Symbol("x".to_string()));
 }
 
@@ -120,6 +120,6 @@ fn test_arithmetic_functions() {
         create_test_span(),
     );
     
-    let result = evaluate(add_expr, env).unwrap();
+    let result = evaluate(Rc::new(add_expr), env).unwrap();
     assert_eq!(result, RuntimeValue::Number(7.0));
 }

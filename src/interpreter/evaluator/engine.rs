@@ -18,7 +18,7 @@ use super::state::*;
 /// # 返回值
 /// 
 /// 求值结果的运行时值或错误信息
-pub fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError> {
+pub fn evaluate(expr: Rc<SExpr>, env: Environment) -> Result<RuntimeValue, EvaluateError> {
     let mut current_state = Rc::new(init_eval_state(expr, env));
     
     loop {
@@ -74,9 +74,7 @@ pub fn evaluate_step(state: Rc<EvalState>) -> EvaluateResult {
         
         // 列表表达式
         SExprContent::Cons { car, cdr } => {
-            let car_ref = car.as_ref();
-            let cdr_ref = cdr.as_ref();
-            evaluate_list_expression(state.clone(), car_ref, cdr_ref)
+            evaluate_list_expression(state.clone(), car.clone(), cdr.clone())
         },
         
         // 空列表
@@ -97,39 +95,39 @@ pub fn evaluate_step(state: Rc<EvalState>) -> EvaluateResult {
 /// 求值列表表达式
 /// 
 /// 根据第一个元素判断是特殊形式还是函数调用
-fn evaluate_list_expression(state: Rc<EvalState>, car: &SExpr, cdr: &SExpr) -> EvaluateResult {
+fn evaluate_list_expression(state: Rc<EvalState>, car: Rc<SExpr>, cdr: Rc<SExpr>) -> EvaluateResult {
     // 检查第一个元素是否为特殊形式关键字
     if let SExprContent::Atom(Value::Symbol(operator)) = &car.content {
         match operator.as_str() {
             "quote" => {
                 // 委托给特殊形式模块
-                crate::interpreter::evaluator::special_forms::quote::evaluate_quote(state, cdr)
+                crate::interpreter::evaluator::special_forms::quote::evaluate_quote(state, cdr.clone())
             },
             "if" => {
                 // 委托给特殊形式模块
-                crate::interpreter::evaluator::special_forms::if_form::evaluate_if(state, cdr)
+                crate::interpreter::evaluator::special_forms::if_form::evaluate_if(state, cdr.clone())
             },
             "lambda" => {
                 // 委托给特殊形式模块
-                crate::interpreter::evaluator::special_forms::lambda::evaluate_lambda(state, cdr)
+                crate::interpreter::evaluator::special_forms::lambda::evaluate_lambda(state, cdr.clone())
             },
             "define" => {
                 // 委托给特殊形式模块
-                crate::interpreter::evaluator::special_forms::define::evaluate_define(state, cdr)
+                crate::interpreter::evaluator::special_forms::define::evaluate_define(state, cdr.clone())
             },
             "let" => {
                 // 委托给特殊形式模块
-                crate::interpreter::evaluator::special_forms::let_form::evaluate_let(state, cdr)
+                crate::interpreter::evaluator::special_forms::let_form::evaluate_let(state, cdr.clone())
             },
             // 不是特殊形式，按函数调用处理
             _ => {
                 // 委托给函数调用模块
-                crate::interpreter::evaluator::function_call::evaluate_function_call(state, car, cdr)
+                crate::interpreter::evaluator::function_call::evaluate_function_call(state, car.clone(), cdr.clone())
             }
         }
     } else {
         // 第一个元素不是符号，按函数调用处理（可能是 lambda 表达式）
-        crate::interpreter::evaluator::function_call::evaluate_function_call(state, car, cdr)
+        crate::interpreter::evaluator::function_call::evaluate_function_call(state, car.clone(), cdr.clone())
     }
 }
 
@@ -149,7 +147,7 @@ fn lookup_variable(name: &str, env: &Environment) -> Option<RuntimeValue> {
 }
 
 /// 使用全局环境进行求值 - 便捷函数
-pub fn evaluate_with_global_env(expr: SExpr) -> Result<RuntimeValue, EvaluateError> {
+pub fn evaluate_with_global_env(expr: Rc<SExpr>) -> Result<RuntimeValue, EvaluateError> {
     let global_env = create_global_environment();
     evaluate(expr, global_env)
 }

@@ -261,10 +261,10 @@ RuntimeValue 的优化需要单独讨论，因为：
 
 | 测试项目 | 平均时间 | 每秒操作数 |
 |----------|----------|------------|
-| SExpr clone | 88ns | 11,271,892 |
-| Rc<Environment> clone | 23ns | 42,923,060 |
-| Rc<EvalState> clone | 22ns | 44,440,316 |
-| RuntimeValue clone | 69ns | 14,478,371 |
+| Rc<SExpr> clone | 30ns | 32,757,350 |
+| Rc<Environment> clone | 25ns | 39,116,606 |
+| Rc<EvalState> clone | 29ns | 33,566,441 |
+| RuntimeValue clone | 44ns | 22,395,232 |
 
 *注：Frame 克隆基准测试已移除，因为 Frame 不再支持 Clone*
 
@@ -316,9 +316,12 @@ RuntimeValue 的优化需要单独讨论，因为：
    - 性能提升：Rc<EvalState> 克隆性能提升 1.5 倍，内存占用减少 33%
    - 基准测试：移除了 Frame 克隆基准测试，因为 Frame 不再支持 Clone
 
-5. **移除 SExpr 的 Clone 派生**
-   - 影响：所有使用 `SExpr::clone()` 的地方
-   - 修改：改为使用 `Rc::new(expr)`
+5. **✅ SExpr Clone 移除**
+   - 状态：已完成
+   - 修改：移除 `SExpr` 的 `Clone` 派生，所有函数接口改为使用 `Rc<SExpr>`
+   - 影响：types.rs, engine.rs, function_call.rs, special_forms/*.rs, tests/*
+   - 性能提升：Rc<SExpr> 克隆性能为 30ns，比原来的 SExpr 克隆快 2.9 倍
+   - 基准测试：更新为 `benchmark_s_expr_rc_clone`
 
 6. **✅ EvaluateResult Clone 移除**
    - 状态：已完成

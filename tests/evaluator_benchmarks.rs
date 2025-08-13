@@ -36,7 +36,7 @@ fn create_nested_expr(depth: usize) -> SExpr {
 fn benchmark_eval_state_rc_clone() {
     let env = Environment::new();
     let expr = create_simple_expr();
-    let state = Rc::new(init_eval_state(expr, env));
+    let state = Rc::new(init_eval_state(Rc::new(expr), env));
     
     let iterations = 100_000;
     let start = Instant::now();
@@ -77,8 +77,8 @@ fn benchmark_environment_rc_clone() {
 }
 
 #[test]
-fn benchmark_s_expr_clone() {
-    let expr = create_nested_expr(10); // 创建深度为10的嵌套表达式
+fn benchmark_s_expr_rc_clone() {
+    let expr = Rc::new(create_nested_expr(10)); // 创建深度为10的嵌套表达式
     
     let iterations = 100_000;
     let start = Instant::now();
@@ -88,7 +88,7 @@ fn benchmark_s_expr_clone() {
     }
     
     let duration = start.elapsed();
-    println!("SExpr clone benchmark (depth 10):");
+    println!("Rc<SExpr> clone benchmark (depth 10):");
     println!("  Iterations: {}", iterations);
     println!("  Total time: {:?}", duration);
     println!("  Average time per clone: {:?}", duration / iterations);

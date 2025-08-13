@@ -15,7 +15,7 @@ use crate::interpreter::lexer::types::{LexError, Token, Span};
 
 /// S表达式 - 带源追踪的Scheme核心数据结构
 /// 使用 Rc 支持宏展开时的有向无环图结构
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct SExpr {
     /// S表达式的具体内容
     pub content: SExprContent,

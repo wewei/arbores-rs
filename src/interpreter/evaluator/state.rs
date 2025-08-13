@@ -18,7 +18,7 @@ use crate::interpreter::evaluator::types::{
 /// 
 /// # 返回
 /// 初始化好的 `EvalState`
-pub fn init_eval_state(expr: SExpr, env: Environment) -> EvalState {
+pub fn init_eval_state(expr: Rc<SExpr>, env: Environment) -> EvalState {
     // 创建根栈帧的 continuation，表示求值完成
     let root_continuation = Continuation::new(|result| {
         EvaluateResult::Completed(result)

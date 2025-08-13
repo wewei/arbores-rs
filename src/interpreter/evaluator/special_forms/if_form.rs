@@ -10,7 +10,7 @@ use super::super::types::*;
 /// 
 /// 语法：(if condition then-expr else-expr)
 /// 语法：(if condition then-expr) - else 分支可选
-pub fn evaluate_if(state: Rc<EvalState>, args: &SExpr) -> EvaluateResult {
+pub fn evaluate_if(state: Rc<EvalState>, args: Rc<SExpr>) -> EvaluateResult {
     // TODO: 实现 if 特殊形式
     EvaluateResult::Error(EvaluateError::InvalidIfSyntax {
         span: state.expr.span.clone(),

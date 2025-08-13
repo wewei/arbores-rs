@@ -10,7 +10,7 @@ use super::super::types::*;
 /// 
 /// 语法：(quote expr) 或简写为 'expr
 /// 返回 expr 的字面值，不进行求值
-pub fn evaluate_quote(state: Rc<EvalState>, args: &SExpr) -> EvaluateResult {
+pub fn evaluate_quote(state: Rc<EvalState>, args: Rc<SExpr>) -> EvaluateResult {
     // quote 只接受一个参数
     match &args.content {
         SExprContent::Cons { car, cdr } => {

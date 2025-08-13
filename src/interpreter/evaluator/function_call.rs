@@ -20,7 +20,7 @@ use std::rc::Rc;
 /// 
 /// # 返回
 /// 求值结果
-pub fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: &SExpr) -> EvaluateResult {
+pub fn evaluate_function_call(state: Rc<EvalState>, operator: Rc<SExpr>, operands: Rc<SExpr>) -> EvaluateResult {
     // 第一阶段：求值函数表达式
     let function_continuation = create_function_eval_continuation(state.clone(), operands.clone());
     
@@ -32,7 +32,7 @@ pub fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: 
     
     EvaluateResult::Continue(Rc::new(EvalState {
         frame: Rc::new(function_frame),
-        expr: Rc::new(operator.clone()),
+        expr: operator.clone(),
         tail_context: TailContext::NonTailPosition, // 函数求值不在尾位置
         binding_name: None,
     }))
@@ -41,7 +41,7 @@ pub fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: 
 /// 创建函数求值完成后的 continuation
 fn create_function_eval_continuation(
     original_state: Rc<EvalState>,
-    operands: SExpr,
+    operands: Rc<SExpr>,
 ) -> Continuation {
     Continuation {
         func: Rc::new(move |function_value| {
@@ -66,7 +66,7 @@ fn create_function_eval_continuation(
 fn evaluate_arguments(
     state: Rc<EvalState>,
     function_value: RuntimeValue,
-    remaining_args: SExpr,
+    remaining_args: Rc<SExpr>,
     evaluated_args: Vec<RuntimeValue>,
 ) -> EvaluateResult {
     match &remaining_args.content {
@@ -80,7 +80,7 @@ fn evaluate_arguments(
             let arg_continuation = create_argument_eval_continuation(
                 state.clone(),
                 function_value,
-                cdr.as_ref().clone(),
+                cdr.clone(),
                 evaluated_args,
             );
             
@@ -92,7 +92,7 @@ fn evaluate_arguments(
             
             EvaluateResult::Continue(Rc::new(EvalState {
                 frame: Rc::new(arg_frame),
-                expr: Rc::new(car.as_ref().clone()),
+                expr: car.clone(),
                 tail_context: TailContext::NonTailPosition, // 参数求值不在尾位置
                 binding_name: None,
             }))
@@ -109,7 +109,7 @@ fn evaluate_arguments(
 fn create_argument_eval_continuation(
     state: Rc<EvalState>,
     function_value: RuntimeValue,
-    remaining_args: SExpr,
+    remaining_args: Rc<SExpr>,
     mut evaluated_args: Vec<RuntimeValue>,
 ) -> Continuation {
     Continuation {
