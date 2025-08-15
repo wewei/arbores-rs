@@ -3,7 +3,7 @@
 //! 支持 vector-set! 操作的可变向量结构
 
 use super::RuntimeObject;
-use gc::{Trace, Finalize, Gc, GcCell};
+use gc::{Trace, Finalize, Gc};
 
 /// 可变向量 - 支持 vector-set! 操作
 #[derive(Debug, Clone, Trace, Finalize)]

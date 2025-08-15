@@ -3,11 +3,10 @@
 //! 定义了 RuntimeObject 和 RuntimeObjectCore，这是整个求值器的核心数据结构
 
 use std::rc::Rc;
-use std::sync::Weak;
-use gc::{Trace, Finalize, Gc};
+use gc::{Trace, Finalize};
 
 use crate::interpreter::SExpr;
-use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Environment, Lambda};
+use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Lambda};
 
 // ============================================================================
 // 核心数据结构定义
@@ -17,9 +16,7 @@ use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Environme
 /// 按照引用类型分为四类：
 /// 1. 原子值：integer, float, boolean, nil - 直接存储
 /// 2. Rc 引用值：Rc<String> - 强引用，不可变内容
-/// 3. Weak 引用值：Weak<BuiltinFunction> - 弱引用，避免循环引用
-/// 4. GC 引用值：Gc<Cons>, Gc<Vector>, Gc<Continuation> - 垃圾回收，支持可变操作
-/// 5. 直接嵌入值：Lambda - 直接存储，避免间接引用
+/// 3. 直接嵌入值：Lambda - 直接存储，避免间接引用
 #[derive(Debug, Clone, Trace, Finalize)]
 pub enum RuntimeObjectCore {
     // === 1. 原子值（Atomic Objects）- 直接存储 ===
@@ -42,11 +39,10 @@ pub enum RuntimeObjectCore {
     /// 符号 - Rc 引用值，不可变内容但可共享
     Symbol(RcString),
     
-    // === 3. Weak 引用值（Weak Reference Objects）- 弱引用 ===
-    /// 内置函数 - Weak 引用值，避免循环引用
-    BuiltinFunction(BuiltinFunctionRef),
+    // === 3. 直接嵌入值（Direct Embedded Objects）- 直接存储 ===
+    /// 内置函数 - 直接嵌入，16 bytes
+    BuiltinFunction(BuiltinFunction),
     
-    // === 4. GC 引用值（Gc Reference Objects）- 垃圾回收，支持可变操作 ===
     /// 可变列表（cons 结构）- Gc 引用值，支持可变操作
     Cons(MutableCons),
     /// 可变向量 - Gc 引用值，支持可变操作
@@ -54,7 +50,6 @@ pub enum RuntimeObjectCore {
     /// 续延 - Gc 引用值，支持 call/cc
     Continuation(Continuation),
     
-    // === 5. 直接嵌入值（Direct Embedded Objects）- 直接存储 ===
     /// Lambda 函数 - 直接嵌入，16 bytes
     Lambda(Lambda),
 }
@@ -86,21 +81,7 @@ impl std::fmt::Display for RcString {
     }
 }
 
-#[derive(Debug, Clone, Trace, Finalize)]
-pub struct BuiltinFunctionRef {
-    #[unsafe_ignore_trace]
-    inner: Weak<BuiltinFunction>,
-}
 
-impl BuiltinFunctionRef {
-    fn new(builtin: Weak<BuiltinFunction>) -> Self {
-        Self { inner: builtin }
-    }
-    
-    fn upgrade(&self) -> Option<std::sync::Arc<BuiltinFunction>> {
-        self.inner.upgrade()
-    }
-}
 
 /// 运行时对象 - 包含核心对象和可选的源表达式
 /// RuntimeObject 本身是一个比较小的对象，可以直接 Clone
@@ -132,14 +113,8 @@ impl PartialEq for RuntimeObject {
             (RuntimeObjectCore::String(a), RuntimeObjectCore::String(b)) => Rc::ptr_eq(&a.inner, &b.inner),
             (RuntimeObjectCore::Symbol(a), RuntimeObjectCore::Symbol(b)) => Rc::ptr_eq(&a.inner, &b.inner),
             
-            // Weak 引用值需要升级为强引用后比较
-            (RuntimeObjectCore::BuiltinFunction(a), RuntimeObjectCore::BuiltinFunction(b)) => {
-                if let (Some(ra), Some(rb)) = (a.inner.upgrade(), b.inner.upgrade()) {
-                    std::ptr::eq(&*ra, &*rb)
-                } else {
-                    false
-                }
-            },
+            // 直接嵌入值比较内容是否相等
+            (RuntimeObjectCore::BuiltinFunction(a), RuntimeObjectCore::BuiltinFunction(b)) => a == b,
             
             // 直接嵌入值比较内容是否相等
             (RuntimeObjectCore::Cons(a), RuntimeObjectCore::Cons(b)) => a == b,
@@ -198,11 +173,7 @@ impl std::fmt::Display for RuntimeObject {
             },
             RuntimeObjectCore::Lambda(_) => write!(f, "#<procedure>"),
             RuntimeObjectCore::BuiltinFunction(builtin) => {
-                if let Some(strong_ref) = builtin.upgrade() {
-                    write!(f, "#<procedure:{}>", strong_ref.name)
-                } else {
-                    write!(f, "#<procedure:builtin>")
-                }
+                write!(f, "#<procedure:{}>", builtin.name())
             },
             RuntimeObjectCore::Continuation(_) => write!(f, "#<continuation>"),
         }
