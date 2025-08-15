@@ -10,18 +10,6 @@ pub trait ContinuationFn: Trace + Finalize {
     fn call(&self, value: Gc<RuntimeObject>) -> EvaluateResult;
 }
 
-/// 简单的续延函数实现
-#[derive(Trace, Finalize)]
-pub struct SimpleContinuation {
-    pub func: fn(Gc<RuntimeObject>) -> EvaluateResult,
-}
-
-impl ContinuationFn for SimpleContinuation {
-    fn call(&self, value: Gc<RuntimeObject>) -> EvaluateResult {
-        (self.func)(value)
-    }
-}
-
 /// 续延结构 - 支持 call/cc
 #[derive(Clone, Trace, Finalize)]
 pub struct Continuation {
@@ -38,11 +26,5 @@ impl PartialEq for Continuation {
 impl std::fmt::Debug for Continuation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Continuation {{ func: <closure> }}")
-    }
-}
-
-impl std::fmt::Debug for SimpleContinuation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SimpleContinuation {{ func: <function> }}")
     }
 }
