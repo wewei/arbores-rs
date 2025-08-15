@@ -247,6 +247,21 @@ pub struct Frame {
 }
 ```
 
+### Continuation
+```rust
+/// 续延函数 trait - 替代 Box<dyn Fn> 以支持 Trace
+pub trait ContinuationFn: Trace + Finalize {
+    fn call(&self, value: Gc<RuntimeObject>) -> EvaluateResult;
+}
+
+/// 续延结构 - 支持 call/cc
+#[derive(Clone, Trace, Finalize)]
+pub struct Continuation {
+    /// 续延函数 - 使用 trait object 而不是 Box<dyn Fn>
+    pub func: Gc<dyn ContinuationFn>,
+}
+```
+
 ### Environment
 ```rust
 /// 环境结构 - 可变的链式结构，支持变量绑定修改
@@ -359,13 +374,22 @@ EvalState 的初始化需要创建一个根栈帧和待求值的表达式：
    - `expr`: 使用传入的 `Rc<SExpr>`
 
 ```rust
+// 根栈帧的续延实现
+struct RootContinuation;
+
+impl ContinuationFn for RootContinuation {
+    fn call(&self, result: Gc<RuntimeObject>) -> EvaluateResult {
+        // 根栈帧的 continuation，表示求值完成
+        EvaluateResult::Completed(result)
+    }
+}
+
 fn init_eval_state(expr: Rc<SExpr>, env: Gc<Environment>) -> EvalState {
     let root_frame = Frame::new_root(
         env,
-        Continuation::new(|result| {
-            // 根栈帧的 continuation，表示求值完成
-            EvaluateResult::Completed(result)
-        })
+        Continuation {
+            func: Gc::new(RootContinuation),
+        }
     );
     
     EvalState::new(
@@ -377,26 +401,13 @@ fn init_eval_state(expr: Rc<SExpr>, env: Gc<Environment>) -> EvalState {
 }
 ```
 
-**注意**：这里需要更新 `Frame::new_root` 的实现，使其接受 `Gc<Environment>` 而不是 `Environment`：
-
-```rust
-impl Frame {
-    /// 创建新的根栈帧
-    pub fn new_root(env: Gc<Environment>, continuation: Continuation) -> Self {
-        Self {
-            env,
-            continuation: Gc::new(continuation),
-            parent: None,
-        }
-    }
-}
-```
+**注意**：为了支持 `Gc`，`Continuation` 不能直接使用闭包，需要定义具体的 `ContinuationFn` 实现。
 
 这种设计的优势：
 - **环境管理**：全局环境保存在根栈帧中，使用 `Gc` 进行垃圾回收
-- **续延系统**：使用 `Continuation` 类型统一处理回调逻辑
+- **续延系统**：使用 `ContinuationFn` trait 和具体实现，支持 `Trace` 和 `Finalize`
 - **引用计数**：使用 `Rc` 管理表达式的生命周期
-- **简洁实现**：根栈帧的 continuation 直接返回完成状态
+- **垃圾回收兼容**：所有续延函数都支持垃圾回收，避免内存泄漏
 
 ### 问题：如何设计 evaluate 主循环？
 
@@ -532,25 +543,40 @@ fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, 
 
 2. **状态转移设计**：
    ```rust
-   fn evaluate_function_call(state: EvalState, operator: &SExpr, operands: &SExpr) -> EvaluateResult {
-       // 阶段1：求值函数表达式
-       let new_continuation = Box::new(move |function_value| {
+   // 函数求值完成后的续延
+   struct FunctionEvalContinuation {
+       frame: Gc<Frame>,
+       operands: Rc<SExpr>,
+   }
+   
+   impl ContinuationFn for FunctionEvalContinuation {
+       fn call(&self, function_value: Gc<RuntimeObject>) -> EvaluateResult {
            // 当函数求值完成后，开始求值参数
-           evaluate_arguments(state.frame, function_value, operands, Vec::new())
-       });
-       
-       let new_frame = Frame {
-           env: state.frame.env.clone(),
-           continuation: new_continuation,
-           parent: Some(Box::new(state.frame)),
+           evaluate_arguments(self.frame.clone(), function_value, &self.operands, Vec::new())
+       }
+   }
+   
+   fn evaluate_function_call(state: Rc<EvalState>, operator: &SExpr, operands: &SExpr) -> EvaluateResult {
+       // 阶段1：求值函数表达式
+       let new_continuation = Continuation {
+           func: Gc::new(FunctionEvalContinuation {
+               frame: state.frame.clone(),
+               operands: operands.clone(),
+           }),
        };
        
-       EvaluateResult::Continue(EvalState {
-           frame: new_frame,
-           expr: operator.clone(),
-           tail_context: TailContext::NonTailPosition, // 函数求值不在尾位置
-           binding_name: None, // 函数求值不绑定到特定名称
-       })
+       let new_frame = Frame::with_parent(
+           state.frame.env.clone(),
+           new_continuation,
+           state.frame.as_ref().clone(),
+       );
+       
+       EvaluateResult::Continue(Rc::new(EvalState::new(
+           new_frame,
+           operator.clone(),
+           TailContext::NonTailPosition, // 函数求值不在尾位置
+           None, // 函数求值不绑定到特定名称
+       )))
    }
    ```
 
@@ -641,8 +667,16 @@ fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, 
    - **链式 continuation**：通过嵌套的 continuation 实现状态转移
    - **尾递归支持**：lambda 函数调用重用当前栈帧的 continuation
    - **统一处理**：内置函数和用户函数使用统一的应用机制
+   - **垃圾回收兼容**：所有 continuation 都支持 `Trace` 和 `Finalize`
 
-6. **尾递归优化关键**：
+6. **ContinuationFn 实现模式**：
+   - **根续延**：`RootContinuation` - 表示求值完成
+   - **函数求值续延**：`FunctionEvalContinuation` - 函数求值完成后求值参数
+   - **参数求值续延**：`ArgumentEvalContinuation` - 参数求值完成后继续下一个参数
+   - **特殊形式续延**：各种特殊形式的具体续延实现
+   - **尾调用续延**：`TailCallContinuation` - 支持尾调用优化
+
+7. **尾递归优化关键**：
    - lambda 函数的函数体求值时，直接使用父栈帧的 continuation
    - 避免创建新的栈帧链，实现真正的尾调用消除
 
@@ -1531,7 +1565,9 @@ fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, 
     - **环境管理**：正确处理环境的生命周期和引用
     - **错误处理**：保证错误信息的完整性和可追踪性
 
-## 重要设计决策：SExpr vs RuntimeObject
+## 重要设计决策
+
+### SExpr vs RuntimeObject
 
 **注意**：在本设计文档中，我们已经实现了清晰的类型分离：
 
@@ -1544,6 +1580,18 @@ fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, 
 3. **可扩展性**：运行时概念不会污染语法结构的纯粹性
 4. **内存优化**：RuntimeObject 采用原子值和嵌入结构的分类，减少间接访问
 5. **垃圾回收**：支持自动内存管理，避免内存泄漏
+
+### ContinuationFn vs 闭包
+
+**注意**：为了支持 `Gc` 垃圾回收，我们使用 `ContinuationFn` trait 替代闭包：
+
+- **闭包问题**：`Box<dyn Fn>` 不支持 `Trace` trait，无法被垃圾回收器追踪
+- **ContinuationFn 解决方案**：定义具体的结构体实现 `ContinuationFn` trait
+- **优势**：
+  1. **垃圾回收兼容**：所有续延函数都支持 `Trace` 和 `Finalize`
+  2. **类型安全**：编译时检查续延函数的正确性
+  3. **性能优化**：避免动态分发的开销
+  4. **调试友好**：每个续延类型都有明确的名称和结构
 
 ### RuntimeObject 设计特点
 
