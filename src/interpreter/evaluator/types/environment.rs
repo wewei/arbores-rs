@@ -3,16 +3,16 @@
 //! 可变的链式结构，支持变量绑定修改
 
 use std::collections::HashMap;
-use std::rc::Rc;
 use super::RuntimeObject;
+use gc::{Trace, Finalize, Gc};
 
 /// 环境结构 - 可变的链式结构，支持变量绑定修改
-#[derive(Debug)]
+#[derive(Debug, Trace, Finalize)]
 pub struct Environment {
     /// 当前环境的变量绑定表
     pub bindings: HashMap<String, RuntimeObject>,
     /// 上级环境（链式结构）
-    pub parent: Option<Rc<Environment>>,
+    parent: Option<Gc<Environment>>,
 }
 
 impl Environment {
@@ -25,7 +25,7 @@ impl Environment {
     }
     
     /// 创建带父环境的新环境
-    pub fn with_parent(parent: Rc<Environment>) -> Self {
+    pub fn with_parent(parent: Gc<Environment>) -> Self {
         Self {
             bindings: HashMap::new(),
             parent: Some(parent),
@@ -55,11 +55,11 @@ impl Environment {
         }
         
         // 递归在父环境查找
-        if let Some(parent) = &self.parent {
+        if let Some(parent) = self.parent.as_ref() {
             let new_parent = parent.set(name, value)?;
             Ok(Self {
                 bindings: self.bindings.clone(),
-                parent: Some(Rc::new(new_parent)),
+                parent: Some(Gc::new(new_parent)),
             })
         } else {
             Err(format!("Undefined variable: {}", name))
@@ -74,10 +74,12 @@ impl Environment {
         }
         
         // 递归在父环境查找
-        if let Some(parent) = &self.parent {
+        if let Some(parent) = self.parent.as_ref() {
             parent.lookup(name)
         } else {
             None
         }
     }
 }
+
+

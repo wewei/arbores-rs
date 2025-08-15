@@ -4,9 +4,10 @@
 
 use std::rc::Rc;
 use std::sync::Weak;
+use gc::{Trace, Finalize, Gc};
 
 use crate::interpreter::SExpr;
-use super::{MutableCons, MutableVector, Lambda, Continuation, BuiltinFunction};
+use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Environment, Lambda};
 
 // ============================================================================
 // 核心数据结构定义
@@ -17,8 +18,9 @@ use super::{MutableCons, MutableVector, Lambda, Continuation, BuiltinFunction};
 /// 1. 原子值：integer, float, boolean, nil - 直接存储
 /// 2. Rc 引用值：Rc<String> - 强引用，不可变内容
 /// 3. Weak 引用值：Weak<BuiltinFunction> - 弱引用，避免循环引用
-/// 4. GC 引用值：Gc<Cons>, Gc<Vector>, Gc<Lambda>, Gc<Continuation> - 垃圾回收，支持可变操作
-#[derive(Debug, Clone)]
+/// 4. GC 引用值：Gc<Cons>, Gc<Vector>, Gc<Continuation> - 垃圾回收，支持可变操作
+/// 5. 直接嵌入值：Lambda - 直接存储，避免间接引用
+#[derive(Debug, Clone, Trace, Finalize)]
 pub enum RuntimeObjectCore {
     // === 1. 原子值（Atomic Objects）- 直接存储 ===
     /// 整数 - 原子值，直接存储
@@ -36,124 +38,79 @@ pub enum RuntimeObjectCore {
     
     // === 2. Rc 引用值（Rc Reference Objects）- 强引用 ===
     /// 字符串 - Rc 引用值，不可变内容但可共享
-    String(Rc<String>),
+    String(RcString),
     /// 符号 - Rc 引用值，不可变内容但可共享
-    Symbol(Rc<String>),
+    Symbol(RcString),
     
     // === 3. Weak 引用值（Weak Reference Objects）- 弱引用 ===
     /// 内置函数 - Weak 引用值，避免循环引用
-    BuiltinFunction(Weak<BuiltinFunction>),
+    BuiltinFunction(BuiltinFunctionRef),
     
-    // === 4. Rc 引用值（Rc Reference Objects）- 强引用，支持可变操作 ===
-    /// 可变列表（cons 结构）- Rc 引用值，支持可变操作
-    Cons(Rc<MutableCons>),
-    /// 可变向量 - Rc 引用值，支持可变操作
-    Vector(Rc<MutableVector>),
-    /// Lambda 函数 - Rc 引用值，支持环境可变
-    Lambda(Rc<Lambda>),
-    /// 续延 - Rc 引用值，支持 call/cc
-    Continuation(Rc<Continuation>),
+    // === 4. GC 引用值（Gc Reference Objects）- 垃圾回收，支持可变操作 ===
+    /// 可变列表（cons 结构）- Gc 引用值，支持可变操作
+    Cons(MutableCons),
+    /// 可变向量 - Gc 引用值，支持可变操作
+    Vector(MutableVector),
+    /// 续延 - Gc 引用值，支持 call/cc
+    Continuation(Continuation),
+    
+    // === 5. 直接嵌入值（Direct Embedded Objects）- 直接存储 ===
+    /// Lambda 函数 - 直接嵌入，16 bytes
+    Lambda(Lambda),
+}
+
+
+
+
+
+
+#[derive(Debug, Clone, Trace, Finalize)]
+pub struct RcString {
+    #[unsafe_ignore_trace]
+    inner: Rc<String>,
+}
+
+impl RcString {
+    fn new(s: String) -> Self {
+        Self { inner: Rc::new(s) }
+    }
+    
+    fn as_str(&self) -> &str {
+        &self.inner
+    }
+}
+
+impl std::fmt::Display for RcString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
+
+#[derive(Debug, Clone, Trace, Finalize)]
+pub struct BuiltinFunctionRef {
+    #[unsafe_ignore_trace]
+    inner: Weak<BuiltinFunction>,
+}
+
+impl BuiltinFunctionRef {
+    fn new(builtin: Weak<BuiltinFunction>) -> Self {
+        Self { inner: builtin }
+    }
+    
+    fn upgrade(&self) -> Option<std::sync::Arc<BuiltinFunction>> {
+        self.inner.upgrade()
+    }
 }
 
 /// 运行时对象 - 包含核心对象和可选的源表达式
 /// RuntimeObject 本身是一个比较小的对象，可以直接 Clone
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Trace, Finalize)]
 pub struct RuntimeObject {
     /// 核心运行时对象
     pub core: RuntimeObjectCore,
     /// 可选的源表达式，用于保存计算出该 RuntimeObject 的 SExpr
+    #[unsafe_ignore_trace]
     pub source: Option<Rc<SExpr>>,
-}
-
-// ============================================================================
-// 构造函数实现
-// ============================================================================
-
-impl RuntimeObject {
-    /// 创建新的运行时对象
-    pub fn new(core: RuntimeObjectCore) -> Self {
-        Self {
-            core,
-            source: None,
-        }
-    }
-    
-    /// 创建带源表达式的运行时对象
-    pub fn with_source(core: RuntimeObjectCore, source: Rc<SExpr>) -> Self {
-        Self {
-            core,
-            source: Some(source),
-        }
-    }
-    
-    /// 获取核心对象
-    pub fn core(&self) -> &RuntimeObjectCore {
-        &self.core
-    }
-    
-    /// 获取源表达式
-    pub fn source(&self) -> Option<&Rc<SExpr>> {
-        self.source.as_ref()
-    }
-    
-    /// 获取对象类型名称
-    pub fn type_name(&self) -> &'static str {
-        match &self.core {
-            RuntimeObjectCore::Integer(_) => "integer",
-            RuntimeObjectCore::Float(_) => "float",
-            RuntimeObjectCore::Rational(_, _) => "rational",
-            RuntimeObjectCore::Character(_) => "character",
-            RuntimeObjectCore::Boolean(_) => "boolean",
-            RuntimeObjectCore::Nil => "null",
-            RuntimeObjectCore::String(_) => "string",
-            RuntimeObjectCore::Symbol(_) => "symbol",
-            RuntimeObjectCore::BuiltinFunction(_) => "procedure",
-            RuntimeObjectCore::Cons(_) => "pair",
-            RuntimeObjectCore::Vector(_) => "vector",
-            RuntimeObjectCore::Lambda(_) => "procedure",
-            RuntimeObjectCore::Continuation(_) => "continuation",
-        }
-    }
-    
-    /// 检查是否为真值
-    pub fn is_truthy(&self) -> bool {
-        match &self.core {
-            RuntimeObjectCore::Boolean(false) => false,
-            _ => true,
-        }
-    }
-    
-    /// 设置 Cons 的 car 部分
-    pub fn set_car(&self, value: RuntimeObject) -> Result<(), String> {
-        match &self.core {
-            RuntimeObjectCore::Cons(cons) => {
-                cons.set_car(value);
-                Ok(())
-            },
-            _ => Err(format!("Expected pair, got {}", self.type_name())),
-        }
-    }
-    
-    /// 设置 Cons 的 cdr 部分
-    pub fn set_cdr(&self, value: RuntimeObject) -> Result<(), String> {
-        match &self.core {
-            RuntimeObjectCore::Cons(cons) => {
-                cons.set_cdr(value);
-                Ok(())
-            },
-            _ => Err(format!("Expected pair, got {}", self.type_name())),
-        }
-    }
-    
-    /// 设置向量元素
-    pub fn vector_set(&self, index: usize, value: RuntimeObject) -> Result<(), String> {
-        match &self.core {
-            RuntimeObjectCore::Vector(vector) => {
-                vector.set(index, value)
-            },
-            _ => Err(format!("Expected vector, got {}", self.type_name())),
-        }
-    }
 }
 
 // ============================================================================
@@ -172,23 +129,23 @@ impl PartialEq for RuntimeObject {
             (RuntimeObjectCore::Nil, RuntimeObjectCore::Nil) => true,
             
             // Rc 引用值比较引用是否相等
-            (RuntimeObjectCore::String(a), RuntimeObjectCore::String(b)) => Rc::ptr_eq(a, b),
-            (RuntimeObjectCore::Symbol(a), RuntimeObjectCore::Symbol(b)) => Rc::ptr_eq(a, b),
+            (RuntimeObjectCore::String(a), RuntimeObjectCore::String(b)) => Rc::ptr_eq(&a.inner, &b.inner),
+            (RuntimeObjectCore::Symbol(a), RuntimeObjectCore::Symbol(b)) => Rc::ptr_eq(&a.inner, &b.inner),
             
             // Weak 引用值需要升级为强引用后比较
             (RuntimeObjectCore::BuiltinFunction(a), RuntimeObjectCore::BuiltinFunction(b)) => {
-                if let (Some(ra), Some(rb)) = (a.upgrade(), b.upgrade()) {
+                if let (Some(ra), Some(rb)) = (a.inner.upgrade(), b.inner.upgrade()) {
                     std::ptr::eq(&*ra, &*rb)
                 } else {
                     false
                 }
             },
             
-            // Rc 引用值比较引用是否相等
-            (RuntimeObjectCore::Cons(a), RuntimeObjectCore::Cons(b)) => Rc::ptr_eq(a, b),
-            (RuntimeObjectCore::Vector(a), RuntimeObjectCore::Vector(b)) => Rc::ptr_eq(a, b),
-            (RuntimeObjectCore::Lambda(a), RuntimeObjectCore::Lambda(b)) => Rc::ptr_eq(a, b),
-            (RuntimeObjectCore::Continuation(a), RuntimeObjectCore::Continuation(b)) => Rc::ptr_eq(a, b),
+            // 直接嵌入值比较内容是否相等
+            (RuntimeObjectCore::Cons(a), RuntimeObjectCore::Cons(b)) => a == b,
+            (RuntimeObjectCore::Vector(a), RuntimeObjectCore::Vector(b)) => a == b,
+            (RuntimeObjectCore::Lambda(a), RuntimeObjectCore::Lambda(b)) => a == b,
+            (RuntimeObjectCore::Continuation(a), RuntimeObjectCore::Continuation(b)) => a == b,
             
             _ => false,
         }
@@ -251,3 +208,5 @@ impl std::fmt::Display for RuntimeObject {
         }
     }
 }
+
+
