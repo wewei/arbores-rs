@@ -325,7 +325,7 @@ pub enum EvaluateResult {
 | 参数名 | 类型 | 描述 |
 |--------|------|------|
 | expr | Rc<SExpr> | 要求值的 S 表达式 |
-| env | Environment | 全局环境 |
+| env | Gc<Environment> | 全局环境 |
 
 #### 返回值
 | 类型 | 描述 |
@@ -359,7 +359,7 @@ EvalState 的初始化需要创建一个根栈帧和待求值的表达式：
    - `expr`: 使用传入的 `Rc<SExpr>`
 
 ```rust
-fn init_eval_state(expr: Rc<SExpr>, env: Environment) -> EvalState {
+fn init_eval_state(expr: Rc<SExpr>, env: Gc<Environment>) -> EvalState {
     let root_frame = Frame::new_root(
         env,
         Continuation::new(|result| {
@@ -374,6 +374,21 @@ fn init_eval_state(expr: Rc<SExpr>, env: Environment) -> EvalState {
         TailContext::TailPosition, // 顶层表达式在尾位置
         None, // 顶层表达式没有绑定名称
     )
+}
+```
+
+**注意**：这里需要更新 `Frame::new_root` 的实现，使其接受 `Gc<Environment>` 而不是 `Environment`：
+
+```rust
+impl Frame {
+    /// 创建新的根栈帧
+    pub fn new_root(env: Gc<Environment>, continuation: Continuation) -> Self {
+        Self {
+            env,
+            continuation: Gc::new(continuation),
+            parent: None,
+        }
+    }
 }
 ```
 
@@ -398,7 +413,7 @@ evaluate 主循环采用状态机模式，反复调用 `evaluate_step` 直到完
 
 3. **实现示例**：
 ```rust
-fn evaluate(expr: Rc<SExpr>, env: Environment) -> Result<Rc<RuntimeObject>, EvaluateError> {
+fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, EvaluateError> {
     let mut current_state = Rc::new(init_eval_state(expr, env));
     
     loop {

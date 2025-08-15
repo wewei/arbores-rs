@@ -18,18 +18,18 @@ pub struct Frame {
 
 impl Frame {
     /// 创建新的根栈帧
-    pub fn new_root(env: Environment, continuation: Continuation) -> Self {
+    pub fn new_root(env: Gc<Environment>, continuation: Continuation) -> Self {
         Self {
-            env: Gc::new(env),
+            env,
             continuation: Gc::new(continuation),
             parent: None,
         }
     }
     
     /// 创建带父栈帧的新栈帧
-    pub fn with_parent(env: Environment, continuation: Continuation, parent: Frame) -> Self {
+    pub fn with_parent(env: Gc<Environment>, continuation: Continuation, parent: Frame) -> Self {
         Self {
-            env: Gc::new(env),
+            env,
             continuation: Gc::new(continuation),
             parent: Some(Gc::new(parent)),
         }
