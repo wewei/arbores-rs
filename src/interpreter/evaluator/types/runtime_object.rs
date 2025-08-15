@@ -50,14 +50,6 @@ pub enum RuntimeObjectCore {
 }
 
 
-
-
-
-
-
-
-
-
 /// 运行时对象 - 包含核心对象和可选的源表达式
 /// RuntimeObject 本身是一个比较小的对象，可以直接 Clone
 #[derive(Debug, Clone, Trace, Finalize)]
@@ -150,5 +142,27 @@ impl std::fmt::Display for RuntimeObject {
         }
     }
 }
+
+// ============================================================================
+// 编译时静态检查 - 确保大小限制
+// ============================================================================
+
+/// 编译时检查 RuntimeObjectCore 大小不超过 24 字节
+/// 如果大小超过限制，编译时会报错
+const _RUNTIME_OBJECT_CORE_SIZE_CHECK: () = {
+    const SIZE: usize = std::mem::size_of::<RuntimeObjectCore>();
+    const MAX_SIZE: usize = 24;
+    // 使用 const_assert 模式：如果条件为假，会导致编译错误
+    let _: [u8; 0] = [0; if SIZE <= MAX_SIZE { 0 } else { 1 }];
+};
+
+/// 编译时检查 RuntimeObject 大小不超过 32 字节
+/// 如果大小超过限制，编译时会报错
+const _RUNTIME_OBJECT_SIZE_CHECK: () = {
+    const SIZE: usize = std::mem::size_of::<RuntimeObject>();
+    const MAX_SIZE: usize = 32;
+    // 使用 const_assert 模式：如果条件为假，会导致编译错误
+    let _: [u8; 0] = [0; if SIZE <= MAX_SIZE { 0 } else { 1 }];
+};
 
 
