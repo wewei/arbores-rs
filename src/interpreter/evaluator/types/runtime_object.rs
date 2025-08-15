@@ -13,43 +13,38 @@ use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Lambda, S
 // ============================================================================
 
 /// 运行时对象核心 - 表示运行时的所有可能对象类型
-/// 按照引用类型分为四类：
-/// 1. 原子值：integer, float, boolean, nil - 直接存储
-/// 2. Rc 引用值：Rc<String> - 强引用，不可变内容
-/// 3. 直接嵌入值：Lambda - 直接存储，避免间接引用
+/// 按照存储方式分为两大类：
+/// 1. 原子值（Atomic Values）- 直接存储，无需间接引用
+/// 2. 嵌入结构（Embedded Structures）- 直接嵌入，避免 GC 管理
 #[derive(Debug, Clone, Trace, Finalize)]
 pub enum RuntimeObjectCore {
-    // === 1. 原子值（Atomic Objects）- 直接存储 ===
-    /// 整数 - 原子值，直接存储
+    // === 1. 原子值（Atomic Values）- 直接存储 ===
+    /// 整数 - 直接存储，8 bytes
     Integer(i64),
-    /// 浮点数 - 原子值，直接存储
+    /// 浮点数 - 直接存储，8 bytes
     Float(f64),
-    /// 有理数 - 原子值，直接存储
+    /// 有理数 - 直接存储，16 bytes
     Rational(i64, i64),  // 分子, 分母
-    /// 字符 - 原子值，直接存储
+    /// 字符 - 直接存储，4 bytes
     Character(char),
-    /// 布尔值 - 原子值，直接存储
+    /// 布尔值 - 直接存储，1 byte
     Boolean(bool),
-    /// 空列表 - 原子值，直接存储
+    /// 空列表 - 直接存储，0 bytes
     Nil,
     
-    // === 2. Rc 引用值（Rc Reference Objects）- 强引用 ===
-    /// 字符串 - Rc 引用值，不可变内容但可共享
+    // === 2. 嵌入结构（Embedded Structures）- 直接嵌入 ===
+    /// 字符串 - 共享引用，8 bytes
     String(StringRef),
-    /// 符号 - Rc 引用值，不可变内容但可共享
+    /// 符号 - 共享引用，8 bytes
     Symbol(StringRef),
-    
-    // === 3. 直接嵌入值（Direct Embedded Objects）- 直接存储 ===
     /// 内置函数 - 直接嵌入，16 bytes
     BuiltinFunction(BuiltinFunction),
-    
-    /// 可变列表（cons 结构）- Gc 引用值，支持可变操作
+    /// 可变列表 - 直接嵌入，16 bytes
     Cons(MutableCons),
-    /// 可变向量 - Gc 引用值，支持可变操作
+    /// 可变向量 - 直接嵌入，8 bytes
     Vector(MutableVector),
-    /// 续延 - Gc 引用值，支持 call/cc
+    /// 续延 - 直接嵌入，16 bytes
     Continuation(Continuation),
-    
     /// Lambda 函数 - 直接嵌入，16 bytes
     Lambda(Lambda),
 }
@@ -89,14 +84,10 @@ impl PartialEq for RuntimeObject {
             (RuntimeObjectCore::Boolean(a), RuntimeObjectCore::Boolean(b)) => a == b,
             (RuntimeObjectCore::Nil, RuntimeObjectCore::Nil) => true,
             
-            // Rc 引用值比较引用是否相等
+            // 嵌入结构比较内容是否相等
             (RuntimeObjectCore::String(a), RuntimeObjectCore::String(b)) => a == b,
             (RuntimeObjectCore::Symbol(a), RuntimeObjectCore::Symbol(b)) => a == b,
-            
-            // 直接嵌入值比较内容是否相等
             (RuntimeObjectCore::BuiltinFunction(a), RuntimeObjectCore::BuiltinFunction(b)) => a == b,
-            
-            // 直接嵌入值比较内容是否相等
             (RuntimeObjectCore::Cons(a), RuntimeObjectCore::Cons(b)) => a == b,
             (RuntimeObjectCore::Vector(a), RuntimeObjectCore::Vector(b)) => a == b,
             (RuntimeObjectCore::Lambda(a), RuntimeObjectCore::Lambda(b)) => a == b,
