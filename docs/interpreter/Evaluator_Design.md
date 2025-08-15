@@ -1,6 +1,6 @@
 # Evaluator 设计
 
-状态：Draft-2
+状态：Draft-3
 
 ## 概述
 
@@ -32,37 +32,64 @@ Evaluator 模块采用分层模块化设计，将不同的职责分离到独立�
 ```
 src/interpreter/evaluator/
 ├── mod.rs                    # 模块入口，导出公共接口
-├── types.rs                  # 核心数据类型定义
+├── types/                    # 核心数据类型定义
+│   ├── mod.rs               # 类型模块入口
+│   ├── runtime_object.rs    # 运行时对象核心定义
+│   ├── lambda.rs            # Lambda 函数定义
+│   ├── builtin_function.rs  # 内置函数定义
+│   ├── mutable_cons.rs      # 可变列表定义
+│   ├── mutable_vector.rs    # 可变向量定义
+│   ├── environment.rs       # 环境结构定义
+│   ├── frame.rs             # 调用栈帧定义
+│   ├── continuation.rs      # 续延定义
+│   ├── evaluation_error.rs  # 求值错误类型
+│   ├── evaluation_result.rs # 求值结果类型
+│   ├── eval_state.rs        # 求值状态定义
+│   └── string_ref.rs        # 字符串引用类型
 ├── engine.rs                 # 主求值引擎（evaluate, evaluate_step）
-├── state.rs                  # 状态管理（EvalState, Frame 相关操作）
-├── environment.rs            # 环境操作集成（与 Environment 模块协作）
 ├── function_call.rs          # 函数调用机制
+├── state.rs                  # 状态管理（EvalState, Frame 相关操作）
 ├── special_forms/            # 特殊形式处理
 │   ├── mod.rs               # 特殊形式模块入口
-│   ├── quote.rs             # quote 特殊形式
-│   ├── if_form.rs           # if 特殊形式
-│   ├── lambda.rs            # lambda 特殊形式
-│   ├── define.rs            # define 特殊形式
-│   ├── let_form.rs          # let 特殊形式
-│   └── utils.rs             # 特殊形式共用工具函数
+│   ├── basic.rs             # 基本特殊形式（define, lambda, if, quote, set!）
+│   ├── control.rs           # 控制流特殊形式（begin, cond, case, and, or, let）
+│   ├── iteration.rs         # 迭代特殊形式（do, for-each, map, call/cc）
+│   ├── macros.rs            # 宏系统（define-syntax, syntax-rules）
+│   └── modules.rs           # 模块系统（define-module, import, export）
 ├── builtins/                 # 内置函数
 │   ├── mod.rs               # 内置函数模块入口
 │   ├── arithmetic.rs        # 算术运算函数 (+, -, *, /, =, <, > 等)
-│   ├── list_ops.rs          # 列表操作函数 (car, cdr, cons, list 等)
-│   ├── type_predicates.rs   # 类型判断函数 (number?, string?, list? 等)
-│   └── arbores_api.rs       # Arbores 专用 API (arb:create, arb:search 等)
-├── continuation.rs           # Continuation 相关工具
-├── tail_call.rs             # 尾调用优化实现
-└── error.rs                 # 错误处理和诊断工具
+│   ├── comparison.rs        # 比较函数 (eq?, equal? 等)
+│   ├── list.rs              # 列表操作函数 (car, cdr, cons, list 等)
+│   ├── vector.rs            # 向量操作函数 (vector, vector-ref 等)
+│   ├── string.rs            # 字符串操作函数 (string-append 等)
+│   ├── type_check.rs        # 类型判断函数 (number?, string? 等)
+│   ├── io.rs                # 输入输出函数 (display, read 等)
+│   └── system.rs            # 系统函数 (load, eval, apply 等)
+└── continuation.rs           # Continuation 相关工具
 ```
 
 ### 模块职责分工
 
 #### 核心模块
 - **`mod.rs`**: 统一导出 `evaluate()`, `evaluate_step()` 等公共接口
-- **`types.rs`**: 定义 `EvalState`, `Frame`, `EvaluateResult`, `EvaluateError` 等核心类型
+- **`types/mod.rs`**: 导出所有核心数据类型
 - **`engine.rs`**: 实现主求值循环和单步状态转移逻辑
 - **`state.rs`**: 提供状态初始化、状态转移的辅助函数
+
+#### 类型系统模块
+- **`types/runtime_object.rs`**: 定义 `RuntimeObject` 和 `RuntimeObjectCore`，支持原子值和嵌入结构
+- **`types/lambda.rs`**: Lambda 函数定义，支持静态部分和闭包分离
+- **`types/builtin_function.rs`**: 内置函数定义，支持签名和实现分离
+- **`types/mutable_cons.rs`**: 可变列表结构，支持 `Gc` 引用
+- **`types/mutable_vector.rs`**: 可变向量结构，支持 `GcCell` 内部可变性
+- **`types/environment.rs`**: 环境结构，支持链式作用域和变量绑定
+- **`types/frame.rs`**: 调用栈帧，支持 `Gc` 引用和续延
+- **`types/continuation.rs`**: 续延定义，支持函数式编程
+- **`types/evaluation_error.rs`**: 详细的错误类型，包含位置信息
+- **`types/evaluation_result.rs`**: 求值结果类型，支持三种状态
+- **`types/eval_state.rs`**: 求值状态，支持尾调用优化
+- **`types/string_ref.rs`**: 字符串引用，支持共享字符串
 
 #### 求值机制
 - **`function_call.rs`**: 
@@ -72,47 +99,61 @@ src/interpreter/evaluator/
 - **`continuation.rs`**: 
   - Continuation 构造和组合工具
   - 状态转移的 continuation 封装
-- **`tail_call.rs`**: 
-  - 尾位置识别和标记
-  - 尾调用优化的具体实现
 
 #### 特殊形式处理
-每个特殊形式独立一个文件，包含：
-- 语法解析和验证
-- 多步骤求值状态转移
-- 错误处理和诊断
+按功能分类组织特殊形式：
+- **`special_forms/basic.rs`**: 基本特殊形式（define, lambda, if, quote, set!）
+- **`special_forms/control.rs`**: 控制流特殊形式（begin, cond, case, and, or, let）
+- **`special_forms/iteration.rs`**: 迭代特殊形式（do, for-each, map, call/cc）
+- **`special_forms/macros.rs`**: 宏系统（define-syntax, syntax-rules）
+- **`special_forms/modules.rs`**: 模块系统（define-module, import, export）
 
 #### 内置函数
 按功能分类组织内置函数：
-- **`arithmetic.rs`**: 数值计算相关
-- **`list_ops.rs`**: 列表和数据结构操作
-- **`type_predicates.rs`**: 类型检查和转换
-- **`arbores_api.rs`**: Arbores 知识库操作
-
-#### 辅助模块
-- **`environment.rs`**: 环境查找、绑定操作的封装
-- **`error.rs`**: 错误构造、位置信息、调试工具
+- **`builtins/arithmetic.rs`**: 算术运算函数（+, -, *, /, mod, abs, max, min等）
+- **`builtins/comparison.rs`**: 比较函数（=, <, >, eq?, equal?等）
+- **`builtins/list.rs`**: 列表操作函数（car, cdr, cons, list, append等）
+- **`builtins/vector.rs`**: 向量操作函数（vector, vector-ref, vector-set!等）
+- **`builtins/string.rs`**: 字符串操作函数（string-append, string-length等）
+- **`builtins/type_check.rs`**: 类型判断函数（number?, string?, symbol?等）
+- **`builtins/io.rs`**: 输入输出函数（display, write, read等）
+- **`builtins/system.rs`**: 系统函数（load, eval, apply, error等）
 
 ### 模块间依赖关系
 
 ```
 engine.rs
-├── types.rs                 # 核心类型
+├── types/                   # 核心类型系统
+│   ├── runtime_object.rs    # 运行时对象
+│   ├── eval_state.rs        # 求值状态
+│   ├── evaluation_result.rs # 求值结果
+│   └── evaluation_error.rs  # 求值错误
 ├── state.rs                 # 状态管理
 ├── function_call.rs         # 函数调用
-├── special_forms/*          # 特殊形式
-├── continuation.rs          # Continuation 支持
-└── tail_call.rs            # 尾调用优化
+└── special_forms/           # 特殊形式
 
 function_call.rs
-├── types.rs                 # 核心类型
-├── builtins/*              # 内置函数
-├── continuation.rs          # Continuation 支持
-└── tail_call.rs            # 尾调用优化
+├── types/                   # 核心类型系统
+│   ├── runtime_object.rs    # 运行时对象
+│   ├── lambda.rs            # Lambda 函数
+│   ├── builtin_function.rs  # 内置函数
+│   └── evaluation_error.rs  # 求值错误
+├── builtins/                # 内置函数
+└── continuation.rs          # Continuation 支持
 
 special_forms/*.rs
-├── types.rs                 # 核心类型
-├── special_forms/utils.rs   # 共用工具
+├── types/                   # 核心类型系统
+│   ├── runtime_object.rs    # 运行时对象
+│   ├── environment.rs       # 环境管理
+│   ├── eval_state.rs        # 求值状态
+│   └── evaluation_error.rs  # 求值错误
+└── continuation.rs          # Continuation 支持
+
+builtins/*.rs
+├── types/                   # 核心类型系统
+│   ├── runtime_object.rs    # 运行时对象
+│   ├── evaluation_error.rs  # 求值错误
+│   └── string_ref.rs        # 字符串引用
 └── continuation.rs          # Continuation 支持
 ```
 
@@ -123,23 +164,65 @@ special_forms/*.rs
 3. **测试友好**: 每个模块可以独立测试
 4. **重用性**: 共用的工具函数和类型定义可以被多个模块使用
 5. **可读性**: 文件结构清晰反映了 Evaluator 的逻辑架构
+6. **类型安全**: 完整的类型系统提供编译时错误检查
+7. **内存优化**: RuntimeObject 设计支持高效的内存使用和垃圾回收
+8. **模块化**: 按功能分类的模块结构便于维护和扩展
 
 ## 关键数据类型
+
+### RuntimeObject 和 RuntimeObjectCore
+```rust
+/// 运行时对象核心 - 表示运行时的所有可能对象类型
+/// 按照存储方式分为两大类：
+/// 1. 原子值（Atomic Values）- 直接存储，无需间接引用
+/// 2. 嵌入结构（Embedded Structures）- 直接嵌入，减少间接访问
+#[derive(Debug, Clone, Trace, Finalize)]
+pub enum RuntimeObjectCore {
+    // === 1. 原子值（Atomic Values）- 直接存储 ===
+    Integer(i64),           // 8 bytes
+    Float(f64),             // 8 bytes
+    Rational(i64, i64),     // 16 bytes
+    Character(char),        // 4 bytes
+    Boolean(bool),          // 1 byte
+    Nil,                    // 0 bytes
+    
+    // === 2. 嵌入结构（Embedded Structures）- 直接嵌入 ===
+    String(StringRef),      // 8 bytes (Rc<String>)
+    Symbol(StringRef),      // 8 bytes (Rc<String>)
+    BuiltinFunction(BuiltinFunction), // 16 bytes (直接嵌入)
+    Cons(MutableCons),      // 16 bytes (直接嵌入)
+    Vector(MutableVector),  // 8 bytes (直接嵌入)
+    Continuation(Continuation), // 16 bytes (直接嵌入)
+    Lambda(Lambda),         // 16 bytes (直接嵌入)
+}
+
+/// 运行时对象 - 包含核心对象和可选的源表达式
+/// RuntimeObject 本身是一个比较小的对象，可以直接 Clone
+#[derive(Debug, Clone, Trace, Finalize)]
+pub struct RuntimeObject {
+    /// 核心运行时对象
+    pub core: RuntimeObjectCore,
+    /// 可选的源表达式，用于保存计算出该 RuntimeObject 的 SExpr
+    #[unsafe_ignore_trace]
+    pub source: Option<Rc<SExpr>>,
+}
+```
 
 ### EvalState
 ```rust
 /// 求值状态 - 表示求值过程中的当前状态
 /// 采用不可变设计，每次状态转移都产生新的状态
+#[derive(Debug)]
 pub struct EvalState {
     /// 当前调用栈 Frame
-    frame: Frame,
+    pub frame: Rc<Frame>,
     /// 待求值表达式
-    expr: SExpr,
+    pub expr: Rc<SExpr>,
     /// 尾调用上下文信息（用于尾调用优化）
-    tail_context: TailContext,
+    pub tail_context: TailContext,
     /// 当前表达式的绑定名称（如果有的话）
     /// 用于支持递归函数定义和调试信息
-    binding_name: Option<String>,
+    pub binding_name: Option<String>,
 }
 
 /// 尾调用上下文 - 标记当前表达式是否在尾位置
@@ -152,26 +235,27 @@ pub enum TailContext {
 
 ### Frame
 ```rust
-/// 调用栈帧 - 链式栈结构，表示当前的执行上下文
+/// 调用栈帧 - 支持函数调用和续延
+#[derive(Debug, Trace, Finalize)]
 pub struct Frame {
-    /// 当前栈的环境
-    env: Environment,
-    /// 返回的 Lambda 回调，输入返回的 RuntimeValue，返回 EvaluateResult
-    continuation: Box<dyn Fn(RuntimeValue) -> EvaluateResult>,
-    /// 父栈帧（链式结构）
-    parent: Option<Box<Frame>>,
+    /// 当前环境
+    pub env: Gc<Environment>,
+    /// 续延
+    pub continuation: Gc<Continuation>,
+    /// 父栈帧
+    pub parent: Option<Gc<Frame>>,
 }
 ```
 
 ### Environment
 ```rust
-/// 环境 - 变量绑定和作用域管理
-/// 链式结构，每个节点包含局部绑定并引用上级环境
+/// 环境结构 - 可变的链式结构，支持变量绑定修改
+#[derive(Debug, Trace, Finalize)]
 pub struct Environment {
-    /// 当前环境的变量绑定表 (变量名 -> 运行时值)
-    bindings: HashMap<String, RuntimeValue>,
+    /// 当前环境的变量绑定表
+    pub bindings: HashMap<String, RuntimeObject>,
     /// 上级环境（链式结构）
-    parent: Option<Box<Environment>>,
+    parent: Option<Gc<Environment>>,
 }
 ```
 
@@ -181,38 +265,51 @@ pub struct Environment {
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvaluateError {
     // 语法错误
-    InvalidQuoteSyntax,
-    InvalidIfSyntax, 
-    InvalidLambdaSyntax,
-    InvalidDefineSyntax,
-    InvalidLetSyntax,
-    InvalidLetBinding,
-    InvalidParameterName,
-    InvalidParameterList,
-    InvalidArgumentList,
+    InvalidQuoteSyntax {
+        expr: Rc<SExpr>,
+        message: String,
+    },
+    InvalidIfSyntax {
+        expr: Rc<SExpr>,
+        message: String,
+    },
+    // ... 其他语法错误
     
     // 运行时错误
-    UndefinedVariable(String),
-    UndefinedFunction(String),
-    NotCallable,
-    ArgumentCountMismatch,
-    DivisionByZero,
+    UndefinedVariable {
+        expr: Rc<SExpr>,
+        name: String,
+    },
+    UndefinedFunction {
+        expr: Rc<SExpr>,
+        name: String,
+    },
+    NotCallable {
+        expr: Rc<SExpr>,
+        value: String,
+    },
+    // ... 其他运行时错误
     
     // 系统错误
-    StackOverflow,
-    OutOfMemory,
+    StackOverflow {
+        expr: Rc<SExpr>,
+    },
+    OutOfMemory {
+        expr: Rc<SExpr>,
+    },
+    // ... 其他系统错误
 }
 ```
 
 ### EvaluateResult
 ```rust
 /// 求值步骤结果 - 表示单步求值的三种可能结果
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum EvaluateResult {
-    /// 求值完成，返回最终结果（运行时值）
-    Completed(RuntimeValue),
+    /// 求值完成，返回最终结果（运行时对象）
+    Completed(Rc<RuntimeObject>),
     /// 需要继续求值，返回下一个状态
-    Continue(EvalState),
+    Continue(Rc<EvalState>),
     /// 求值出错，返回错误信息
     Error(EvaluateError),
 }
@@ -227,20 +324,20 @@ pub enum EvaluateResult {
 #### 参数列表
 | 参数名 | 类型 | 描述 |
 |--------|------|------|
-| expr | SExpr | 要求值的 S 表达式 |
+| expr | Rc<SExpr> | 要求值的 S 表达式 |
 | env | Environment | 全局环境 |
 
 #### 返回值
 | 类型 | 描述 |
 |------|------|
-| Result<RuntimeValue, EvaluateError> | 求值结果的运行时值或错误信息 |
+| Result<Rc<RuntimeObject>, EvaluateError> | 求值结果的运行时对象或错误信息 |
 
 ### evaluate_step() - 单步状态转移函数 (对外接口)
 
 #### 参数列表
 | 参数名 | 类型 | 描述 |
 |--------|------|------|
-| state | EvalState | 当前求值状态 |
+| state | Rc<EvalState> | 当前求值状态 |
 
 #### 返回值
 | 类型 | 描述 |
@@ -254,36 +351,36 @@ pub enum EvaluateResult {
 EvalState 的初始化需要创建一个根栈帧和待求值的表达式：
 
 1. **创建根栈帧**：
-   - `env`: 使用传入的全局环境
-   - `continuation`: 创建一个终止回调函数，当求值完成时返回 `Completed` 结果
+   - `env`: 使用传入的全局环境，包装为 `Gc<Environment>`
+   - `continuation`: 创建一个终止续延，当求值完成时返回 `Completed` 结果
    - `parent`: 设为 `None`，表示这是最顶层的栈帧
 
 2. **设置待求值表达式**：
-   - `expr`: 直接使用传入的 SExpr
+   - `expr`: 使用传入的 `Rc<SExpr>`
 
 ```rust
-fn init_eval_state(expr: SExpr, env: Environment) -> EvalState {
-    let root_frame = Frame {
+fn init_eval_state(expr: Rc<SExpr>, env: Environment) -> EvalState {
+    let root_frame = Frame::new_root(
         env,
-        continuation: Box::new(|result| {
+        Continuation::new(|result| {
             // 根栈帧的 continuation，表示求值完成
             EvaluateResult::Completed(result)
-        }),
-        parent: None,
-    };
+        })
+    );
     
-    EvalState {
-        frame: root_frame,
+    EvalState::new(
+        root_frame,
         expr,
-        tail_context: TailContext::TailPosition, // 顶层表达式在尾位置
-        binding_name: None, // 顶层表达式没有绑定名称
-    }
+        TailContext::TailPosition, // 顶层表达式在尾位置
+        None, // 顶层表达式没有绑定名称
+    )
 }
 ```
 
 这种设计的优势：
-- **环境管理**：全局环境保存在根栈帧中
-- **统一接口**：continuation 返回 EvaluateResult，支持所有三种状态
+- **环境管理**：全局环境保存在根栈帧中，使用 `Gc` 进行垃圾回收
+- **续延系统**：使用 `Continuation` 类型统一处理回调逻辑
+- **引用计数**：使用 `Rc` 管理表达式的生命周期
 - **简洁实现**：根栈帧的 continuation 直接返回完成状态
 
 ### 问题：如何设计 evaluate 主循环？
@@ -301,8 +398,8 @@ evaluate 主循环采用状态机模式，反复调用 `evaluate_step` 直到完
 
 3. **实现示例**：
 ```rust
-fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError> {
-    let mut current_state = init_eval_state(expr, env);
+fn evaluate(expr: Rc<SExpr>, env: Environment) -> Result<Rc<RuntimeObject>, EvaluateError> {
+    let mut current_state = Rc::new(init_eval_state(expr, env));
     
     loop {
         match evaluate_step(current_state) {
@@ -320,6 +417,8 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
 - **可控制性**：每一步都可以被观察和调试
 - **可中断性**：循环可以在任意点暂停或终止
 - **尾递归友好**：状态转移不会增加调用栈深度
+- **引用计数**：使用 `Rc` 管理状态的生命周期，避免不必要的克隆
+- **垃圾回收**：`RuntimeObject` 和 `Frame` 使用 `Gc` 进行自动内存管理
 
 ### 问题：单步迭代时，如何判定函数调用和特殊形式？
 
@@ -332,25 +431,31 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
 
 2. **列表表达式的判定逻辑**：
    ```rust
-   fn evaluate_step(state: EvalState) -> EvaluateResult {
+   fn evaluate_step(state: Rc<EvalState>) -> EvaluateResult {
        match &state.expr.content {
            // 自求值表达式
            SExprContent::Atom(Value::Number(n)) => {
-               // 转换为运行时值并调用 continuation
-               (state.frame.continuation)(RuntimeValue::Number(*n))
+               // 转换为运行时对象并调用 continuation
+               let runtime_obj = RuntimeObject::new_integer(*n);
+               state.frame.continuation.call(Rc::new(runtime_obj))
            },
            SExprContent::Atom(Value::String(s)) => {
-               (state.frame.continuation)(RuntimeValue::String(s.clone()))
+               let runtime_obj = RuntimeObject::new_string(s.clone());
+               state.frame.continuation.call(Rc::new(runtime_obj))
            },
            SExprContent::Atom(Value::Bool(b)) => {
-               (state.frame.continuation)(RuntimeValue::Boolean(*b))
+               let runtime_obj = RuntimeObject::new_boolean(*b);
+               state.frame.continuation.call(Rc::new(runtime_obj))
            },
            
            // 符号（变量引用）
            SExprContent::Atom(Value::Symbol(name)) => {
-               match lookup_variable(name, &state.frame.env) {
-                   Some(value) => (state.frame.continuation)(value.clone()),
-                   None => EvaluateResult::Error(EvaluateError::UndefinedVariable(name.clone())),
+               match state.frame.env.lookup(name) {
+                   Some(value) => state.frame.continuation.call(Rc::new(value)),
+                   None => EvaluateResult::Error(EvaluateError::UndefinedVariable {
+                       expr: state.expr.clone(),
+                       name: name.clone(),
+                   }),
                }
            },
            
@@ -360,14 +465,17 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
            },
            
            // 其他情况
-           _ => EvaluateResult::Error(EvaluateError::InvalidExpression),
+           _ => EvaluateResult::Error(EvaluateError::InvalidExpression {
+               expr: state.expr.clone(),
+               message: "Unknown expression type".to_string(),
+           }),
        }
    }
    ```
 
 3. **特殊形式判定**：
    ```rust
-   fn evaluate_list_expression(state: EvalState, car: &SExpr, cdr: &SExpr) -> EvaluateResult {
+   fn evaluate_list_expression(state: Rc<EvalState>, car: &SExpr, cdr: &SExpr) -> EvaluateResult {
        // 检查第一个元素是否为特殊形式关键字
        if let SExprContent::Atom(Value::Symbol(operator)) = &car.content {
            match operator.as_str() {
@@ -389,8 +497,9 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
 4. **设计优势**：
    - **清晰分发**：通过模式匹配明确处理不同表达式类型
    - **可扩展性**：新增特殊形式只需在 match 分支中添加
-   - **错误处理**：未知表达式类型有明确的错误处理
+   - **错误处理**：未知表达式类型有明确的错误处理，包含位置信息
    - **统一接口**：所有处理函数都返回 EvaluateResult
+   - **类型安全**：使用 `RuntimeObject` 统一表示所有运行时值
 
 5. **特殊形式优先级**：
    - 特殊形式的判定优先于函数调用
@@ -1407,17 +1516,41 @@ fn evaluate(expr: SExpr, env: Environment) -> Result<RuntimeValue, EvaluateError
     - **环境管理**：正确处理环境的生命周期和引用
     - **错误处理**：保证错误信息的完整性和可追踪性
 
-## 重要设计决策：SExpr vs RuntimeValue
+## 重要设计决策：SExpr vs RuntimeObject
 
-**注意**：在本设计文档中，我们使用了 `SExpr` 来表示运行时值，但在实际实现中，我们应该采用更清晰的设计：
+**注意**：在本设计文档中，我们已经实现了清晰的类型分离：
 
 - **SExpr**：纯粹的语法结构，只用于表示解析阶段的 S 表达式
-- **RuntimeValue**：运行时值类型，包含所有可能的计算结果，包括闭包、内置函数等
+- **RuntimeObject**：运行时对象类型，包含所有可能的计算结果，包括闭包、内置函数等
 
 这种分离有以下优势：
 1. **概念清晰**：解析时和运行时的值类型明确分离
 2. **类型安全**：编译时防止在错误的阶段使用错误的类型  
 3. **可扩展性**：运行时概念不会污染语法结构的纯粹性
+4. **内存优化**：RuntimeObject 采用原子值和嵌入结构的分类，减少间接访问
+5. **垃圾回收**：支持自动内存管理，避免内存泄漏
+
+### RuntimeObject 设计特点
+
+1. **原子值（Atomic Values）**：
+   - 直接存储在 `RuntimeObjectCore` 中
+   - 包括：Integer、Float、Rational、Character、Boolean、Nil
+   - 无需间接引用，访问效率高
+
+2. **嵌入结构（Embedded Structures）**：
+   - 直接嵌入到 `RuntimeObjectCore` 中
+   - 包括：String、Symbol、BuiltinFunction、Cons、Vector、Continuation、Lambda
+   - 减少指针间接访问，提高缓存局部性
+
+3. **内存管理**：
+   - 使用 `Gc` 进行垃圾回收
+   - 使用 `Rc` 管理共享数据
+   - 支持 `Trace` 和 `Finalize` trait
+
+4. **大小优化**：
+   - `RuntimeObjectCore` 最大 24 字节
+   - `RuntimeObject` 最大 32 字节
+   - 编译时静态检查确保大小限制
 
 详见：[Runtime_Value_Design.md](./Runtime_Value_Design.md)
 
