@@ -6,7 +6,7 @@ use std::rc::Rc;
 use gc::{Trace, Finalize};
 
 use crate::interpreter::SExpr;
-use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Lambda};
+use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Lambda, StringRef};
 
 // ============================================================================
 // 核心数据结构定义
@@ -35,9 +35,9 @@ pub enum RuntimeObjectCore {
     
     // === 2. Rc 引用值（Rc Reference Objects）- 强引用 ===
     /// 字符串 - Rc 引用值，不可变内容但可共享
-    String(RcString),
+    String(StringRef),
     /// 符号 - Rc 引用值，不可变内容但可共享
-    Symbol(RcString),
+    Symbol(StringRef),
     
     // === 3. 直接嵌入值（Direct Embedded Objects）- 直接存储 ===
     /// 内置函数 - 直接嵌入，16 bytes
@@ -59,27 +59,7 @@ pub enum RuntimeObjectCore {
 
 
 
-#[derive(Debug, Clone, Trace, Finalize)]
-pub struct RcString {
-    #[unsafe_ignore_trace]
-    inner: Rc<String>,
-}
 
-impl RcString {
-    fn new(s: String) -> Self {
-        Self { inner: Rc::new(s) }
-    }
-    
-    fn as_str(&self) -> &str {
-        &self.inner
-    }
-}
-
-impl std::fmt::Display for RcString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.inner)
-    }
-}
 
 
 
@@ -110,8 +90,8 @@ impl PartialEq for RuntimeObject {
             (RuntimeObjectCore::Nil, RuntimeObjectCore::Nil) => true,
             
             // Rc 引用值比较引用是否相等
-            (RuntimeObjectCore::String(a), RuntimeObjectCore::String(b)) => Rc::ptr_eq(&a.inner, &b.inner),
-            (RuntimeObjectCore::Symbol(a), RuntimeObjectCore::Symbol(b)) => Rc::ptr_eq(&a.inner, &b.inner),
+            (RuntimeObjectCore::String(a), RuntimeObjectCore::String(b)) => a == b,
+            (RuntimeObjectCore::Symbol(a), RuntimeObjectCore::Symbol(b)) => a == b,
             
             // 直接嵌入值比较内容是否相等
             (RuntimeObjectCore::BuiltinFunction(a), RuntimeObjectCore::BuiltinFunction(b)) => a == b,

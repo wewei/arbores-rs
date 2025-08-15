@@ -16,6 +16,7 @@ pub mod continuation;
 pub mod evaluation_error;
 pub mod evaluation_result;
 pub mod eval_state;
+pub mod string_ref;
 
 pub use runtime_object::*;
 pub use lambda::*;
@@ -28,6 +29,7 @@ pub use continuation::*;
 pub use evaluation_error::*;
 pub use evaluation_result::*;
 pub use eval_state::*;
+pub use string_ref::*;
 
 // ============================================================================
 // 兼容性类型别名（用于过渡）
