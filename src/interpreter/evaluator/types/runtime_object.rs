@@ -15,7 +15,7 @@ use super::{MutableCons, MutableVector, Continuation, BuiltinFunction, Lambda, S
 /// 运行时对象核心 - 表示运行时的所有可能对象类型
 /// 按照存储方式分为两大类：
 /// 1. 原子值（Atomic Values）- 直接存储，无需间接引用
-/// 2. 嵌入结构（Embedded Structures）- 直接嵌入，避免 GC 管理
+/// 2. 嵌入结构（Embedded Structures）- 直接嵌入，减少间接访问
 #[derive(Debug, Clone, Trace, Finalize)]
 pub enum RuntimeObjectCore {
     // === 1. 原子值（Atomic Values）- 直接存储 ===
