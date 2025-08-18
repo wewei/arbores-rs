@@ -3,8 +3,8 @@
 //! 表示求值过程中的当前状态
 
 use std::rc::Rc;
-use crate::interpreter::SExpr;
-use super::Frame;
+use gc::Gc;
+use super::{Frame, RuntimeObject};
 
 /// 尾调用上下文 - 标记当前表达式是否在尾位置
 #[derive(Clone, Debug, PartialEq)]
@@ -19,9 +19,9 @@ pub enum TailContext {
 #[derive(Debug)]
 pub struct EvalState {
     /// 当前调用栈 Frame
-    pub frame: Rc<Frame>,
+    pub frame: Gc<Frame>,
     /// 待求值表达式
-    pub expr: Rc<SExpr>,
+    pub expr: Gc<RuntimeObject>,
     /// 尾调用上下文信息（用于尾调用优化）
     pub tail_context: TailContext,
     /// 当前表达式的绑定名称（如果有的话）
@@ -31,13 +31,13 @@ pub struct EvalState {
 impl EvalState {
     /// 创建新的求值状态
     pub fn new(
-        frame: Frame, 
-        expr: Rc<SExpr>, 
+        frame: Gc<Frame>, 
+        expr: Gc<RuntimeObject>, 
         tail_context: TailContext,
         binding_name: Option<String>
     ) -> Self {
         Self {
-            frame: Rc::new(frame),
+            frame,
             expr,
             tail_context,
             binding_name,

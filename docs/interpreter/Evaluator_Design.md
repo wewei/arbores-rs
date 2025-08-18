@@ -1,6 +1,6 @@
 # Evaluator 设计
 
-状态：Draft-3
+状态：Draft-4
 
 ## 概述
 
@@ -215,9 +215,9 @@ pub struct RuntimeObject {
 #[derive(Debug)]
 pub struct EvalState {
     /// 当前调用栈 Frame
-    pub frame: Rc<Frame>,
+    pub frame: Gc<Frame>,
     /// 待求值表达式
-    pub expr: Rc<SExpr>,
+    pub expr: Gc<RuntimeObject>,
     /// 尾调用上下文信息（用于尾调用优化）
     pub tail_context: TailContext,
     /// 当前表达式的绑定名称（如果有的话）
@@ -347,6 +347,11 @@ pub enum EvaluateResult {
 |------|------|
 | Result<Rc<RuntimeObject>, EvaluateError> | 求值结果的运行时对象或错误信息 |
 
+#### 说明
+- 函数开始时将 `SExpr` 转换为 `Gc<RuntimeObject>`
+- 转换后的运行时对象包含原始的 `SExpr` 作为 `source` 字段
+- 后续的求值过程在运行时对象上进行
+
 ### evaluate_step() - 单步状态转移函数 (对外接口)
 
 #### 参数列表
@@ -358,6 +363,11 @@ pub enum EvaluateResult {
 | 类型 | 描述 |
 |------|------|
 | EvaluateResult | 三分枝结果：Completed(结果)、Continue(下一状态)、Error(错误) |
+
+#### 说明
+- `state.expr` 现在是 `Gc<RuntimeObject>` 类型，直接包含运行时对象
+- 求值过程直接在运行时对象上进行，无需重复转换
+- 错误信息中的 `expr` 字段从 `state.expr.source` 获取原始的 `SExpr`
 
 ## 关键设计问题
 
@@ -384,7 +394,7 @@ impl ContinuationFn for RootContinuation {
     }
 }
 
-fn init_eval_state(expr: Rc<SExpr>, env: Gc<Environment>) -> EvalState {
+fn init_eval_state(expr: Gc<RuntimeObject>, env: Gc<Environment>) -> EvalState {
     let root_frame = Frame::new_root(
         env,
         Continuation {
@@ -393,7 +403,7 @@ fn init_eval_state(expr: Rc<SExpr>, env: Gc<Environment>) -> EvalState {
     );
     
     EvalState::new(
-        root_frame,
+        Gc::new(root_frame),
         expr,
         TailContext::TailPosition, // 顶层表达式在尾位置
         None, // 顶层表达式没有绑定名称
@@ -403,11 +413,14 @@ fn init_eval_state(expr: Rc<SExpr>, env: Gc<Environment>) -> EvalState {
 
 **注意**：为了支持 `Gc`，`Continuation` 不能直接使用闭包，需要定义具体的 `ContinuationFn` 实现。
 
+**重要设计变更**：`EvalState` 中的表达式现在是 `Gc<RuntimeObject>` 而不是 `Rc<SExpr>`，因为求值过程是在运行时对象上进行的。这需要在 `evaluate` 函数开始时将 `SExpr` 转换为 `RuntimeObject`。
+
 这种设计的优势：
 - **环境管理**：全局环境保存在根栈帧中，使用 `Gc` 进行垃圾回收
 - **续延系统**：使用 `ContinuationFn` trait 和具体实现，支持 `Trace` 和 `Finalize`
-- **引用计数**：使用 `Rc` 管理表达式的生命周期
 - **垃圾回收兼容**：所有续延函数都支持垃圾回收，避免内存泄漏
+- **类型一致性**：求值状态中的表达式与运行时对象类型保持一致
+- **内存管理**：使用 `Gc` 统一管理所有运行时对象，包括状态中的表达式
 
 ### 问题：如何设计 evaluate 主循环？
 
@@ -425,7 +438,9 @@ evaluate 主循环采用状态机模式，反复调用 `evaluate_step` 直到完
 3. **实现示例**：
 ```rust
 fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, EvaluateError> {
-    let mut current_state = Rc::new(init_eval_state(expr, env));
+    // 将 SExpr 转换为 RuntimeObject
+    let runtime_expr = convert_sexpr_to_runtime_object(expr)?;
+    let mut current_state = Rc::new(init_eval_state(runtime_expr, env));
     
     loop {
         match evaluate_step(current_state) {
@@ -458,41 +473,45 @@ fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, 
 2. **列表表达式的判定逻辑**：
    ```rust
    fn evaluate_step(state: Rc<EvalState>) -> EvaluateResult {
-       match &state.expr.content {
+       match &state.expr.core {
            // 自求值表达式
-           SExprContent::Atom(Value::Number(n)) => {
-               // 转换为运行时对象并调用 continuation
-               let runtime_obj = RuntimeObject::new_integer(*n);
-               state.frame.continuation.call(Rc::new(runtime_obj))
+           RuntimeObjectCore::Integer(n) => {
+               // 直接调用 continuation
+               state.frame.continuation.func.call(state.expr.clone())
            },
-           SExprContent::Atom(Value::String(s)) => {
-               let runtime_obj = RuntimeObject::new_string(s.clone());
-               state.frame.continuation.call(Rc::new(runtime_obj))
+           RuntimeObjectCore::Float(n) => {
+               state.frame.continuation.func.call(state.expr.clone())
            },
-           SExprContent::Atom(Value::Bool(b)) => {
-               let runtime_obj = RuntimeObject::new_boolean(*b);
-               state.frame.continuation.call(Rc::new(runtime_obj))
+           RuntimeObjectCore::Boolean(b) => {
+               state.frame.continuation.func.call(state.expr.clone())
+           },
+           RuntimeObjectCore::String(s) => {
+               state.frame.continuation.func.call(state.expr.clone())
            },
            
            // 符号（变量引用）
-           SExprContent::Atom(Value::Symbol(name)) => {
+           RuntimeObjectCore::Symbol(name) => {
                match state.frame.env.lookup(name) {
-                   Some(value) => state.frame.continuation.call(Rc::new(value)),
+                   Some(value) => state.frame.continuation.func.call(Gc::new(value)),
                    None => EvaluateResult::Error(EvaluateError::UndefinedVariable {
-                       expr: state.expr.clone(),
+                       expr: state.expr.source.clone().unwrap_or_else(|| {
+                           Rc::new(SExpr::without_span(SExprContent::Atom(Value::Symbol(name.clone()))))
+                       }),
                        name: name.clone(),
                    }),
                }
            },
            
            // 列表表达式
-           SExprContent::Cons { car, cdr } => {
-               evaluate_list_expression(state, car, cdr)
+           RuntimeObjectCore::Cons(cons) => {
+               evaluate_list_expression(state, cons)
            },
            
            // 其他情况
            _ => EvaluateResult::Error(EvaluateError::InvalidExpression {
-               expr: state.expr.clone(),
+               expr: state.expr.source.clone().unwrap_or_else(|| {
+                   Rc::new(SExpr::without_span(SExprContent::Atom(Value::Symbol("unknown".to_string()))))
+               }),
                message: "Unknown expression type".to_string(),
            }),
        }
@@ -1566,6 +1585,32 @@ fn evaluate(expr: Rc<SExpr>, env: Gc<Environment>) -> Result<Rc<RuntimeObject>, 
     - **错误处理**：保证错误信息的完整性和可追踪性
 
 ## 重要设计决策
+
+### Draft-4 设计变更总结
+
+在 Draft-4 中，我们对 `EvalState` 进行了重要的设计变更：
+
+1. **表达式类型变更**：
+   - `EvalState.expr` 从 `Rc<SExpr>` 改为 `Gc<RuntimeObject>`
+   - 求值过程直接在运行时对象上进行，避免重复转换
+
+2. **Frame 引用变更**：
+   - `EvalState.frame` 从 `Rc<Frame>` 改为 `Gc<Frame>`
+   - 统一使用 `Gc` 进行垃圾回收管理
+
+3. **构造函数变更**：
+   - `EvalState::new()` 现在接受 `Gc<Frame>` 和 `Gc<RuntimeObject>`
+   - `init_eval_state()` 函数相应更新
+
+4. **求值流程变更**：
+   - `evaluate()` 函数开始时将 `SExpr` 转换为 `RuntimeObject`
+   - `evaluate_step()` 函数直接处理 `RuntimeObject` 而不是 `SExpr`
+
+这些变更的优势：
+- **类型一致性**：求值状态中的表达式与运行时对象类型保持一致
+- **内存管理统一**：所有运行时对象都使用 `Gc` 管理
+- **性能优化**：避免在求值过程中重复的 `SExpr` 到 `RuntimeObject` 转换
+- **垃圾回收友好**：所有相关对象都支持 `Trace` 和 `Finalize`
 
 ### SExpr vs RuntimeObject
 

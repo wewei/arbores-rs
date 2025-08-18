@@ -9,7 +9,9 @@
 pub mod types;
 pub mod builtins;
 pub mod special_forms;
+pub mod engine;
 
 pub use types::*;
 pub use builtins::*;
 pub use special_forms::*;
+pub use engine::*;

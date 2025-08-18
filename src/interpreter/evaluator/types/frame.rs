@@ -11,7 +11,7 @@ pub struct Frame {
     /// 当前环境
     pub env: Gc<Environment>,
     /// 续延
-    pub continuation: Gc<Continuation>,  // Rc 包装的续延函数
+    pub continuation: Gc<Continuation>,
     /// 父栈帧
     pub parent: Option<Gc<Frame>>,
 }

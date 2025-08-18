@@ -153,7 +153,7 @@ const _RUNTIME_OBJECT_CORE_SIZE_CHECK: () = {
     const SIZE: usize = std::mem::size_of::<RuntimeObjectCore>();
     const MAX_SIZE: usize = 24;
     // 使用 const_assert 模式：如果条件为假，会导致编译错误
-    let _: [u8; 0] = [0; if SIZE <= MAX_SIZE { 0 } else { 1 }];
+    let _: [u8; 0] = [0; (SIZE <= MAX_SIZE) as usize];
 };
 
 /// 编译时检查 RuntimeObject 大小不超过 32 字节
@@ -162,7 +162,7 @@ const _RUNTIME_OBJECT_SIZE_CHECK: () = {
     const SIZE: usize = std::mem::size_of::<RuntimeObject>();
     const MAX_SIZE: usize = 32;
     // 使用 const_assert 模式：如果条件为假，会导致编译错误
-    let _: [u8; 0] = [0; if SIZE <= MAX_SIZE { 0 } else { 1 }];
+    let _: [u8; 0] = [0; (SIZE <= MAX_SIZE) as usize];
 };
 
 

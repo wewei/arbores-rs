@@ -1,156 +1,89 @@
-use arbores::legacy::repl::Repl;
-use clap::{Arg, Command};
-use std::io::{self, Read};
+use std::rc::Rc;
+use gc::Gc;
+
+use arbores::interpreter::{
+    evaluator::{evaluate, Environment, RuntimeObject, RuntimeObjectCore},
+    tokenize,
+    parse,
+};
 
 fn main() {
-    let matches = Command::new("arbores")
-        .version("0.1.0")
-        .author("weiwei")
-        .about("Arbores Scheme Interpreter")
-        .after_help("Examples:
-  arbores                           Start interactive REPL
-  arbores script.scm                Execute Scheme file
-  arbores -e '(+ 1 2 3)'            Evaluate expression
-  echo '(* 4 5)' | arbores --       Read from stdin")
-        .arg(
-            Arg::new("file")
-                .help("Scheme file to execute (use \"--\" to read from stdin)")
-                .value_name("FILE")
-                .index(1)
-        )
-        .arg(
-            Arg::new("eval")
-                .short('e')
-                .long("eval")
-                .value_name("EXPRESSION")
-                .help("Evaluate expression and exit")
-                .action(clap::ArgAction::Set)
-        )
-        .get_matches();
-
-    // 如果指定了 -e 参数，求值表达式并退出
-    if let Some(expression) = matches.get_one::<String>("eval") {
-        execute_expression(expression);
-        return;
-    }
-
-    // 如果指定了文件，执行文件
-    if let Some(file_path) = matches.get_one::<String>("file") {
-        execute_file(file_path);
-        return;
-    }
-
-    // 检查 stdin 是否有数据
-    if !atty::is(atty::Stream::Stdin) {
-        // 从 stdin 读取并执行
-        execute_stdin();
-        return;
-    }
-
-    // 启动交互式 REPL
-    start_interactive_repl();
-}
-
-fn start_interactive_repl() {
-    match Repl::new() {
-        Ok(mut repl) => {
-            if let Err(e) = repl.run() {
-                eprintln!("REPL error: {}", e);
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to initialize REPL: {}", e);
-            std::process::exit(1);
-        }
-    }
-}
-
-fn execute_expression(expression: &str) {
-    match Repl::new() {
-        Ok(mut repl) => {
-            match repl.eval_multiple(expression) {
-                Ok(results) => {
-                    for result in results {
-                        println!("{}", result);
-                    }
-                },
-                Err(e) => {
-                    eprintln!("Error evaluating expression: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to initialize REPL: {}", e);
-            std::process::exit(1);
-        }
-    }
-}
-
-fn execute_stdin() {
-    let mut stdin = io::stdin();
-    let mut input = String::new();
+    println!("Arbores 求值器测试");
+    println!("==================");
     
-    match stdin.read_to_string(&mut input) {
-        Ok(_) => {
-            if input.trim().is_empty() {
-                return;
+    // 测试简单的四则运算
+    test_arithmetic();
+}
+
+fn test_arithmetic() {
+    println!("\n测试四则运算:");
+    
+    let test_cases = vec![
+        ("(+ 1 2)", "3"),
+        ("(- 5 2)", "3"),
+        ("(* 3 4)", "12"),
+        ("(/ 10 2)", "5"),
+        ("(+ 1 2 3 4)", "10"),
+        ("(- 10 3 2)", "5"),
+        ("(* 2 3 4)", "24"),
+        ("(/ 100 2 5)", "10"),
+        ("(+ 42)", "42"),
+        ("(- 5)", "-5"),
+        ("(* 7)", "7"),
+        ("(/ 2)", "0.5"),
+        ("(+)", "0"),
+        ("(*)", "1"),
+        ("(+ 1 2.5)", "3.5"),
+        ("(* 3 2.5)", "7.5"),
+    ];
+    
+    // 创建全局环境
+    let env = Gc::new(Environment::new());
+    
+    for (input, expected) in test_cases {
+        match evaluate_expression(input, &env) {
+            Ok(result) => {
+                let result_str = format_runtime_object(&result);
+                let status = if result_str == expected { "✓" } else { "✗" };
+                println!("{} {} => {} (期望: {})", status, input, result_str, expected);
+            },
+            Err(e) => {
+                println!("✗ {} => 错误: {:?}", input, e);
             }
-            
-            match Repl::new() {
-                Ok(mut repl) => {
-                    match repl.eval_multiple(&input) {
-                        Ok(results) => {
-                            for result in results {
-                                println!("{}", result);
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Error executing stdin: {}", e);
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to initialize REPL: {}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Error reading from stdin: {}", e);
-            std::process::exit(1);
         }
     }
 }
 
-fn execute_file(file_path: &str) {
-    match std::fs::read_to_string(file_path) {
-        Ok(content) => {
-            match Repl::new() {
-                Ok(mut repl) => {
-                    match repl.eval_multiple(&content) {
-                        Ok(results) => {
-                            for result in results {
-                                println!("{}", result);
-                            }
-                        },
-                        Err(e) => {
-                            eprintln!("Error executing file: {}", e);
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to initialize REPL: {}", e);
-                    std::process::exit(1);
-                }
+fn evaluate_expression(expr_str: &str, env: &Gc<Environment>) -> Result<Rc<RuntimeObject>, Box<dyn std::error::Error>> {
+    // 词法分析
+    let tokens = tokenize(expr_str.chars());
+    
+    // 语法分析
+    let parse_output = parse(tokens);
+    let exprs = parse_output.result?;
+    
+    if exprs.is_empty() {
+        return Err("没有解析到表达式".into());
+    }
+    
+    // 求值
+    let result = evaluate(Rc::new(exprs.remove(0)), env.clone())?;
+    Ok(result)
+}
+
+fn format_runtime_object(obj: &RuntimeObject) -> String {
+    match &obj.core {
+        RuntimeObjectCore::Integer(n) => n.to_string(),
+        RuntimeObjectCore::Float(n) => {
+            if n.fract() == 0.0 {
+                (*n as i64).to_string()
+            } else {
+                n.to_string()
             }
-        }
-        Err(e) => {
-            eprintln!("Error reading file '{}': {}", file_path, e);
-            std::process::exit(1);
-        }
+        },
+        RuntimeObjectCore::String(s) => s.to_string(),
+        RuntimeObjectCore::Boolean(b) => if *b { "#t".to_string() } else { "#f".to_string() },
+        RuntimeObjectCore::Nil => "()".to_string(),
+        _ => format!("{:?}", obj.core),
     }
 }
